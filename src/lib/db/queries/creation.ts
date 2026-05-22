@@ -44,10 +44,26 @@ export async function getCreationData() {
     })),
   );
 
+  const signedJobs = await Promise.all(
+    jobs.map(async (job) => {
+      const config = job.config as { outputs?: Array<{ bucket: string; path: string; sourceUrl?: string }> } | null;
+      if (!config?.outputs?.length) return { ...job, signedOutputs: [] };
+
+      const signedOutputs = await Promise.all(
+        config.outputs.map(async (output) => ({
+          ...output,
+          signedUrl: await signedReferenceUrl(output.bucket, output.path),
+        })),
+      );
+
+      return { ...job, signedOutputs };
+    }),
+  );
+
   return {
     characters,
     decors,
     references: signedReferences,
-    jobs,
+    jobs: signedJobs,
   };
 }

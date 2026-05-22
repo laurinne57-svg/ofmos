@@ -1,8 +1,10 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
+import { useFormStatus } from 'react-dom';
 
 import {
+  Download01,
   FilterLines,
   Grid01,
   Hash01,
@@ -43,6 +45,7 @@ export function CreationClient({ data }: { data: CreationData }) {
   const [outputCount, setOutputCount] = useState(1);
   const [aspectRatio, setAspectRatio] = useState('9:16');
   const [strength, setStrength] = useState('balanced');
+  const [model, setModel] = useState('nano-banana');
 
   const selectedCharacter = data.characters.find((character) => character.id === characterId) ?? null;
   const selectedDecor = data.decors.find((decor) => decor.id === decorId) ?? null;
@@ -78,6 +81,7 @@ export function CreationClient({ data }: { data: CreationData }) {
           <input type="hidden" name="outputCount" value={outputCount} />
           <input type="hidden" name="aspectRatio" value={aspectRatio} />
           <input type="hidden" name="strength" value={strength} />
+          <input type="hidden" name="model" value={model} />
 
           <PanelBlock>
             <div className="grid grid-cols-2 gap-2">
@@ -179,6 +183,23 @@ export function CreationClient({ data }: { data: CreationData }) {
             </PanelBlock>
           </div>
 
+          <PanelBlock>
+            <Label className="text-white/80">Model</Label>
+            <Select value={model} onValueChange={(value) => setModel(value ?? 'nano-banana')}>
+              <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="nano-banana">Nano Banana</SelectItem>
+                <SelectItem value="nano-banana-pro">Nano Banana Pro</SelectItem>
+                <SelectItem value="nano-banana-2">Nano Banana 2</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="mt-2 text-xs leading-5 text-white/35">
+              Image mode sends character + decor references to the backend provider. Video mode is prepared but needs the video API adapter.
+            </p>
+          </PanelBlock>
+
           <div className="sticky bottom-0 -mx-4 border-t border-white/10 bg-[#101110]/95 p-4 backdrop-blur">
             <div className="mb-3 flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-2">
               <button
@@ -197,10 +218,7 @@ export function CreationClient({ data }: { data: CreationData }) {
                 +
               </button>
             </div>
-            <Button type="submit" className="h-12 w-full rounded-2xl bg-[#a82b8f] text-base font-bold text-white shadow-[0_10px_30px_rgba(168,43,143,0.35)] hover:bg-[#bd35a2]">
-              <Stars02 className="mr-2 h-4 w-4" />
-              Generate draft
-            </Button>
+            <GenerateButton />
           </div>
         </form>
       </aside>
@@ -338,10 +356,13 @@ function GenerationGrid({ jobs }: { jobs: CreationData['jobs'] }) {
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {creationJobs.map((job) => {
         const config = job.config as any;
+        const signedOutputs = (job as any).signedOutputs as Array<{ signedUrl: string | null; sourceUrl?: string }> | undefined;
         return (
           <div key={job.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035]">
-            <div className="flex aspect-[4/5] items-center justify-center bg-black/35">
-              {config?.mode === 'video' ? (
+            <div className="flex aspect-[4/5] items-center justify-center overflow-hidden bg-black/35">
+              {signedOutputs?.[0]?.signedUrl ? (
+                <img src={signedOutputs[0].signedUrl} alt="Generated output" className="h-full w-full object-cover" />
+              ) : config?.mode === 'video' ? (
                 <PlayCircle className="h-12 w-12 text-white/35" />
               ) : (
                 <Image03 className="h-12 w-12 text-white/35" />
@@ -350,19 +371,64 @@ function GenerationGrid({ jobs }: { jobs: CreationData['jobs'] }) {
             <div className="space-y-3 p-4">
               <div className="flex items-center justify-between">
                 <Badge variant="outline" className="border-white/15 text-white">{config?.mode ?? 'image'}</Badge>
-                <span className="text-xs text-white/40">{job.status}</span>
+                <span className={cn(
+                  'text-xs',
+                  job.status === 'done' ? 'text-emerald-300' : job.status === 'failed' ? 'text-red-300' : 'text-white/40',
+                )}>
+                  {job.status}
+                </span>
               </div>
               <p className="line-clamp-3 text-sm leading-6 text-white/65">{config?.rawPrompt ?? job.prompt}</p>
+              {job.errorMessage && (
+                <p className="rounded-lg border border-red-400/20 bg-red-500/10 p-2 text-xs leading-5 text-red-200">
+                  {job.errorMessage}
+                </p>
+              )}
+              {signedOutputs && signedOutputs.length > 1 && (
+                <div className="grid grid-cols-4 gap-1">
+                  {signedOutputs.slice(1, 5).map((output, index) => (
+                    <div key={`${job.id}-${index}`} className="aspect-square overflow-hidden rounded-md bg-black/30">
+                      {output.signedUrl ? <img src={output.signedUrl} alt="Generated variant" className="h-full w-full object-cover" /> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex flex-wrap gap-2 text-xs text-white/45">
                 <span>{config?.aspectRatio}</span>
                 <span>{config?.outputCount} outputs</span>
                 <span>{config?.referenceCounts?.character ?? 0} char refs</span>
                 <span>{config?.referenceCounts?.decor ?? 0} decor refs</span>
               </div>
+              {signedOutputs?.[0]?.signedUrl && (
+                <a
+                  href={signedOutputs[0].signedUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-8 items-center rounded-lg border border-white/10 px-3 text-xs font-semibold text-white/70 hover:bg-white/10 hover:text-white"
+                >
+                  <Download01 className="mr-2 h-3.5 w-3.5" />
+                  Open output
+                </a>
+              )}
             </div>
           </div>
         );
       })}
     </div>
+  );
+}
+
+function GenerateButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button
+      type="submit"
+      disabled={pending}
+      className="h-12 w-full rounded-2xl bg-[#a82b8f] text-base font-bold text-white shadow-[0_10px_30px_rgba(168,43,143,0.35)] hover:bg-[#bd35a2] disabled:opacity-60"
+    >
+      <Stars02 className="mr-2 h-4 w-4" />
+      {pending ? 'Generating...' : 'Generate'}
+    </Button>
   );
 }
