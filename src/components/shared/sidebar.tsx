@@ -54,6 +54,7 @@ const navSections = [
     items: [
       { label: 'Accounts', href: '/accounts', icon: Share07 },
       { label: 'Content', href: '/content', icon: Film02 },
+      { label: 'Création', href: '/creation', icon: MagicWand02 },
       { label: 'AI Studio', href: '/ai-studio', icon: Image03 },
       { label: 'Video Tools', href: '/video-tools', icon: VideoRecorder },
     ],

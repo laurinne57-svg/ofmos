@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
-import { activities, models } from '@/lib/db/schema';
+import { activities, aiCharacters, models } from '@/lib/db/schema';
 import { createModelSchema, updateModelSchema } from '@/lib/validations/models';
 
 async function logActivity(
@@ -26,6 +26,18 @@ async function updateStatus(
     .update(models)
     .set({ status, updatedAt: new Date(), ...extra })
     .where(eq(models.id, modelId));
+}
+
+function cleanHandle(value: string) {
+  return value
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 export async function createModel(formData: FormData): Promise<void> {
@@ -190,4 +202,45 @@ export async function addNote(modelId: string, content: string) {
     .set({ updatedAt: new Date() })
     .where(eq(models.id, modelId));
   revalidatePath(`/models/${modelId}`);
+}
+
+export async function ensureModelAiCharacter(modelId: string): Promise<string> {
+  const existing = await db
+    .select({ id: aiCharacters.id })
+    .from(aiCharacters)
+    .where(eq(aiCharacters.modelId, modelId))
+    .limit(1);
+
+  if (existing[0]) return existing[0].id;
+
+  const model = await db
+    .select({
+      id: models.id,
+      name: models.name,
+      pseudoHandle: models.pseudoHandle,
+      notesCall: models.notesCall,
+    })
+    .from(models)
+    .where(eq(models.id, modelId))
+    .limit(1);
+
+  if (!model[0]) throw new Error('Model not found');
+
+  const handle = cleanHandle(model[0].pseudoHandle || model[0].name);
+  const [character] = await db
+    .insert(aiCharacters)
+    .values({
+      modelId,
+      name: model[0].name,
+      handle,
+      description: `AI character generated from CRM model ${model[0].name}`,
+      identityPrompt: model[0].notesCall || null,
+    })
+    .returning({ id: aiCharacters.id });
+
+  revalidatePath(`/models/${modelId}`);
+  revalidatePath('/creation');
+  revalidatePath('/ai-studio');
+
+  return character.id;
 }

@@ -1,7 +1,8 @@
 import { and, desc, eq, ilike, inArray, or, sql, lt } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
-import { activities, models } from '@/lib/db/schema';
+import { activities, aiCharacters, aiReferenceImages, models } from '@/lib/db/schema';
+import { createClient } from '@/lib/supabase/server';
 
 export type ModelFilters = {
   search?: string;
@@ -66,6 +67,38 @@ export async function getModelActivities(modelId: string) {
     .from(activities)
     .where(eq(activities.modelId, modelId))
     .orderBy(desc(activities.createdAt));
+}
+
+async function signedReferenceUrl(bucket: string, path: string) {
+  const supabase = await createClient();
+  const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
+  return data?.signedUrl ?? null;
+}
+
+export async function getModelAiCharacter(modelId: string) {
+  const character = await db
+    .select()
+    .from(aiCharacters)
+    .where(eq(aiCharacters.modelId, modelId))
+    .limit(1);
+
+  const current = character[0] ?? null;
+  if (!current) return { character: null, references: [] };
+
+  const references = await db
+    .select()
+    .from(aiReferenceImages)
+    .where(eq(aiReferenceImages.characterId, current.id))
+    .orderBy(desc(aiReferenceImages.createdAt));
+
+  const signedReferences = await Promise.all(
+    references.map(async (reference) => ({
+      ...reference,
+      signedUrl: await signedReferenceUrl(reference.bucket, reference.storagePath),
+    })),
+  );
+
+  return { character: current, references: signedReferences };
 }
 
 export async function getStaleModels() {

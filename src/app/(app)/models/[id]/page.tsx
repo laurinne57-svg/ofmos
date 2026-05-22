@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 
-import { getModelActivities, getModelById } from '@/lib/db/queries/models';
+import { getModelActivities, getModelAiCharacter, getModelById } from '@/lib/db/queries/models';
 import { StatusBadge, TierBadge } from '@/components/models/status-badge';
 import { ModelTimeline } from '@/components/models/model-timeline';
 import { ModelActionsPanel } from '@/components/models/model-actions-panel';
@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import Link from 'next/link';
 import { ArrowLeft } from '@untitledui/icons';
 import { Button } from '@/components/ui/button';
+import { ModelAiReferences } from '@/components/models/model-ai-references';
 
 export default async function ModelDetailPage({
   params,
@@ -17,7 +18,11 @@ export default async function ModelDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [model, acts] = await Promise.all([getModelById(id), getModelActivities(id)]);
+  const [model, acts, aiProfile] = await Promise.all([
+    getModelById(id),
+    getModelActivities(id),
+    getModelAiCharacter(id),
+  ]);
 
   if (!model) notFound();
 
@@ -62,6 +67,20 @@ export default async function ModelDetailPage({
               </CardContent>
             </Card>
           )}
+
+          <Card className="card-elevated">
+            <CardHeader>
+              <CardTitle>Références IA du modèle</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ModelAiReferences
+                modelId={model.id}
+                modelName={model.name}
+                character={aiProfile.character}
+                references={aiProfile.references}
+              />
+            </CardContent>
+          </Card>
 
           {model.status === 'questionnaire_received' || model.disponibilityHoursPerDay ? (
             <Card>
