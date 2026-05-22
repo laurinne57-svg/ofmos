@@ -6,8 +6,8 @@ import { buildGenerationPrompt, extractMentions, normalizeMention } from '@/lib/
 import {
   buildProviderPayload,
   enhancorVideoModes,
-  generateWithNanoBanana,
   getProviderState,
+  queueNanoBananaImage,
   queueEnhancorVideo,
   type EnhancorVideoMode,
   type GenerationMode,
@@ -304,7 +304,7 @@ export async function createCreationJob(formData: FormData): Promise<void> {
       .update(aiGenerationJobs)
       .set({
         status: 'failed',
-        errorMessage: 'NANO_BANANA_API_KEY is not configured.',
+        errorMessage: 'NANO_BANANA_API_KEY or ENHANCOR_API_KEY is not configured.',
         updatedAt: new Date(),
       })
       .where(eq(aiGenerationJobs.id, job.id));
@@ -314,23 +314,18 @@ export async function createCreationJob(formData: FormData): Promise<void> {
 
   try {
     const referenceImageUrls = await signedReferenceUrls([...characterRefs, ...decorRefs]);
-    const result = await generateWithNanoBanana({
+    const result = await queueNanoBananaImage({
       prompt,
       referenceImageUrls,
       aspectRatio,
-      selectedModel: String(formData.get('model') ?? 'nano-banana'),
-    });
-    const outputs = await saveGeneratedImages({
-      imageUrls: result.outputImageUrls,
-      jobId: job.id,
+      resolution: String(formData.get('imageResolution') ?? '2K'),
+      webhookUrl: `${getAppUrl()}/api/enhancor/webhook`,
     });
 
     await db
       .update(aiGenerationJobs)
       .set({
-        status: 'done',
-        resultBucket: outputs[0]?.bucket ?? null,
-        resultPath: outputs[0]?.path ?? null,
+        status: 'queued',
         updatedAt: new Date(),
         config: {
           source: 'creation',
@@ -341,17 +336,15 @@ export async function createCreationJob(formData: FormData): Promise<void> {
           outputCount,
           strength,
           providerState,
-          payload: basePayload,
+          payload: result.payload,
           external: {
-            id: result.externalId,
-            modelUsed: result.modelUsed,
-            creditsUsed: result.creditsUsed,
+            requestId: result.requestId,
+            provider: 'nano-banana-2-new',
           },
           referenceCounts: {
             character: characterRefs.length,
             decor: decorRefs.length,
           },
-          outputs,
         },
       })
       .where(eq(aiGenerationJobs.id, job.id));

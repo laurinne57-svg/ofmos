@@ -15,9 +15,19 @@ export type NanoBananaResult = {
   raw: unknown;
 };
 
+export type NanoBananaQueueResult = {
+  requestId: string;
+  payload: Record<string, unknown>;
+  raw: unknown;
+};
+
+function getImageApiKey() {
+  return process.env.NANO_BANANA_API_KEY || process.env.ENHANCOR_API_KEY;
+}
+
 export function getProviderState() {
   return {
-    imageProvider: process.env.NANO_BANANA_API_KEY ? 'nano-banana' : 'not_configured',
+    imageProvider: getImageApiKey() ? 'nano-banana' : 'not_configured',
     videoProvider: process.env.ENHANCOR_API_KEY ? 'enhancor' : 'not_configured',
     enhancor: process.env.ENHANCOR_API_KEY ? 'configured' : 'not_configured',
   };
@@ -88,9 +98,9 @@ export async function generateWithNanoBanana(input: {
   aspectRatio: string;
   selectedModel?: string;
 }) {
-  const apiKey = process.env.NANO_BANANA_API_KEY;
+  const apiKey = getImageApiKey();
   if (!apiKey) {
-    throw new Error('NANO_BANANA_API_KEY is not configured');
+    throw new Error('NANO_BANANA_API_KEY or ENHANCOR_API_KEY is not configured');
   }
 
   const response = await fetch('https://www.nananobanana.com/api/v1/generate', {
@@ -140,6 +150,50 @@ export async function generateWithNanoBanana(input: {
     creditsUsed: data?.creditsUsed,
     raw: json,
   } satisfies NanoBananaResult;
+}
+
+export async function queueNanoBananaImage(input: {
+  prompt: string;
+  referenceImageUrls: string[];
+  aspectRatio: string;
+  resolution: string;
+  webhookUrl: string;
+}) {
+  const apiKey = getImageApiKey();
+  if (!apiKey) {
+    throw new Error('NANO_BANANA_API_KEY or ENHANCOR_API_KEY is not configured');
+  }
+
+  const payload: Record<string, unknown> = {
+    prompt: input.prompt,
+    webhook_url: input.webhookUrl,
+    aspect_ratio: input.aspectRatio,
+    resolution: input.resolution,
+  };
+
+  if (input.referenceImageUrls.length) {
+    payload.input_images = input.referenceImageUrls.slice(0, 14);
+  }
+
+  const response = await fetch('https://apireq.enhancor.ai/api/nano-banana-2-new/v1/queue', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await response.json().catch(() => null);
+
+  if (!response.ok || json?.success === false) {
+    throw new Error(json?.error || json?.message || `Nano Banana queue failed (${response.status})`);
+  }
+
+  const requestId = json?.requestId || json?.request_id || json?.id;
+  if (!requestId) throw new Error('Nano Banana did not return a requestId');
+
+  return { requestId: String(requestId), payload, raw: json } satisfies NanoBananaQueueResult;
 }
 
 export function getEnhancorBaseUrl() {
