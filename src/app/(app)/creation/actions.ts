@@ -5,8 +5,11 @@ import { eq } from 'drizzle-orm';
 import { buildGenerationPrompt, extractMentions, normalizeMention } from '@/lib/ai/mentions';
 import {
   buildProviderPayload,
+  enhancorVideoModes,
   generateWithNanoBanana,
   getProviderState,
+  queueEnhancorVideo,
+  type EnhancorVideoMode,
   type GenerationMode,
 } from '@/lib/ai/providers';
 import { db } from '@/lib/db';
@@ -94,6 +97,33 @@ async function saveGeneratedImages(input: {
   return saved;
 }
 
+function parseLines(value: string) {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function parseMultiFramePrompts(value: string) {
+  return parseLines(value).map((line) => {
+    const [durationPart, ...promptParts] = line.includes('|')
+      ? line.split('|')
+      : ['5', line];
+    return {
+      duration: Math.max(1, Number(durationPart.trim()) || 5),
+      prompt: promptParts.join('|').trim(),
+    };
+  }).filter((item) => item.prompt);
+}
+
+function getAppUrl() {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` ||
+    'https://ofm-os.vercel.app'
+  ).replace(/\/$/, '');
+}
+
 export async function createCreationJob(formData: FormData): Promise<void> {
   const mode = (String(formData.get('mode') ?? 'image') as GenerationMode) || 'image';
   const rawPrompt = String(formData.get('prompt') ?? '').trim();
@@ -102,6 +132,21 @@ export async function createCreationJob(formData: FormData): Promise<void> {
   const aspectRatio = String(formData.get('aspectRatio') ?? '9:16');
   const outputCount = Math.max(1, Math.min(4, Number(formData.get('outputCount') ?? 1)));
   const strength = String(formData.get('strength') ?? 'balanced');
+  const videoMode = (String(formData.get('videoMode') ?? 'multi_reference') as EnhancorVideoMode);
+  const duration = String(formData.get('duration') ?? '5');
+  const resolution = String(formData.get('resolution') ?? '720p');
+  const fastMode = formData.get('fastMode') === 'on';
+  const fullAccess = formData.get('fullAccess') !== 'off';
+  const isUncensored = formData.get('isUncensored') === 'on';
+  const externalImages = parseLines(String(formData.get('externalImages') ?? ''));
+  const externalVideos = parseLines(String(formData.get('externalVideos') ?? ''));
+  const externalAudios = parseLines(String(formData.get('externalAudios') ?? ''));
+  const productUrls = parseLines(String(formData.get('productUrls') ?? ''));
+  const influencerUrls = parseLines(String(formData.get('influencerUrls') ?? ''));
+  const firstFrameImage = String(formData.get('firstFrameImage') ?? '').trim();
+  const lastFrameImage = String(formData.get('lastFrameImage') ?? '').trim();
+  const lipsyncingAudio = String(formData.get('lipsyncingAudio') ?? '').trim();
+  const multiFramePrompts = parseMultiFramePrompts(String(formData.get('multiFramePrompts') ?? ''));
 
   if (!rawPrompt) throw new Error('Prompt is required');
 
@@ -130,7 +175,7 @@ export async function createCreationJob(formData: FormData): Promise<void> {
     .filter(Boolean)
     .join('\n');
 
-  const payload = buildProviderPayload({
+  const basePayload = buildProviderPayload({
     mode,
     prompt,
     negativePrompt,
@@ -157,7 +202,8 @@ export async function createCreationJob(formData: FormData): Promise<void> {
       outputCount,
       strength,
       providerState,
-      payload,
+      payload: basePayload,
+      videoMode: mode === 'video' ? videoMode : null,
       referenceCounts: {
         character: characterRefs.length,
         decor: decorRefs.length,
@@ -166,14 +212,89 @@ export async function createCreationJob(formData: FormData): Promise<void> {
   }).returning({ id: aiGenerationJobs.id });
 
   if (mode !== 'image') {
-    await db
-      .update(aiGenerationJobs)
-      .set({
-        status: 'failed',
-        errorMessage: 'Video provider is not configured yet. Add OFM_VIDEO_API_KEY and provider adapter.',
-        updatedAt: new Date(),
-      })
-      .where(eq(aiGenerationJobs.id, job.id));
+    if (providerState.videoProvider !== 'enhancor') {
+      await db
+        .update(aiGenerationJobs)
+        .set({
+          status: 'failed',
+          errorMessage: 'ENHANCOR_API_KEY is not configured.',
+          updatedAt: new Date(),
+        })
+        .where(eq(aiGenerationJobs.id, job.id));
+      revalidatePath('/creation');
+      return;
+    }
+
+    try {
+      const referenceImageUrls = await signedReferenceUrls([...characterRefs, ...decorRefs]);
+      const sharedImages = [...referenceImageUrls, ...externalImages].slice(0, 9);
+      const promptForMode = videoMode === 'multi_reference'
+        ? `${prompt}\n\nUse references: ${sharedImages.map((_, i) => `@image${i + 1}`).join(' ')}`
+        : videoMode === 'ugc'
+          ? `${prompt}\n\nUse product/influencer references in the scene.`
+          : videoMode === 'lipsyncing'
+            ? `${prompt}\n\nMatch speech/audio timing precisely. ${lipsyncingAudio ? '@audio1' : ''}`
+            : prompt;
+
+      const result = await queueEnhancorVideo({
+        mode: videoMode,
+        prompt: promptForMode,
+        duration,
+        resolution,
+        aspectRatio,
+        webhookUrl: `${getAppUrl()}/api/enhancor/webhook`,
+        fastMode,
+        fullAccess,
+        isUncensored,
+        images: videoMode === 'multi_reference' ? sharedImages : externalImages,
+        videos: externalVideos,
+        audios: lipsyncingAudio ? [lipsyncingAudio, ...externalAudios] : externalAudios,
+        products: productUrls.length ? productUrls : videoMode === 'ugc' ? decorRefs.length ? referenceImageUrls.slice(0, 4) : [] : [],
+        influencers: influencerUrls.length ? influencerUrls : videoMode === 'ugc' ? characterRefs.length ? referenceImageUrls.slice(0, 4) : [] : [],
+        firstFrameImage: firstFrameImage || sharedImages[0] || null,
+        lastFrameImage: lastFrameImage || sharedImages[1] || null,
+        lipsyncingAudio: lipsyncingAudio || externalAudios[0] || null,
+        multiFramePrompts,
+      });
+
+      await db
+        .update(aiGenerationJobs)
+        .set({
+          status: 'queued',
+          updatedAt: new Date(),
+          config: {
+            source: 'creation',
+            mode,
+            rawPrompt,
+            mentions,
+            aspectRatio,
+            outputCount,
+            strength,
+            providerState,
+            payload: result.payload,
+            videoMode,
+            videoModeLabel: enhancorVideoModes[videoMode]?.label,
+            external: {
+              requestId: result.requestId,
+            },
+            referenceCounts: {
+              character: characterRefs.length,
+              decor: decorRefs.length,
+            },
+          },
+        })
+        .where(eq(aiGenerationJobs.id, job.id));
+    } catch (error) {
+      await db
+        .update(aiGenerationJobs)
+        .set({
+          status: 'failed',
+          errorMessage: error instanceof Error ? error.message : 'Video queue failed',
+          updatedAt: new Date(),
+        })
+        .where(eq(aiGenerationJobs.id, job.id));
+    }
+
     revalidatePath('/creation');
     return;
   }
@@ -220,7 +341,7 @@ export async function createCreationJob(formData: FormData): Promise<void> {
           outputCount,
           strength,
           providerState,
-          payload,
+          payload: basePayload,
           external: {
             id: result.externalId,
             modelUsed: result.modelUsed,

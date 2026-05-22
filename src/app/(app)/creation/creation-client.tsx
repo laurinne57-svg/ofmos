@@ -36,6 +36,20 @@ import { createCreationJob } from './actions';
 
 type CreationData = Awaited<ReturnType<typeof import('@/lib/db/queries/creation').getCreationData>>;
 type Mode = 'image' | 'video';
+type VideoMode = 'ugc' | 'multi_reference' | 'multi_frame' | 'lipsyncing' | 'first_n_last_frames' | 'text-to-video';
+
+const videoModes: Array<{
+  value: VideoMode;
+  label: string;
+  hint: string;
+}> = [
+  { value: 'multi_reference', label: 'Multi Reference', hint: 'Character/decor refs, up to 9 images.' },
+  { value: 'ugc', label: 'UGC', hint: 'Product + influencer ad generation.' },
+  { value: 'multi_frame', label: 'Multi Frame', hint: 'Sequential shots, 4-15s total.' },
+  { value: 'lipsyncing', label: 'Lip Sync', hint: 'Face + audio URL under 15s.' },
+  { value: 'first_n_last_frames', label: 'First / Last', hint: 'Transition between two frames.' },
+  { value: 'text-to-video', label: 'Text to Video', hint: 'Prompt only, no refs.' },
+];
 
 export function CreationClient({ data }: { data: CreationData }) {
   const [mode, setMode] = useState<Mode>('image');
@@ -46,6 +60,9 @@ export function CreationClient({ data }: { data: CreationData }) {
   const [aspectRatio, setAspectRatio] = useState('9:16');
   const [strength, setStrength] = useState('balanced');
   const [model, setModel] = useState('nano-banana');
+  const [videoMode, setVideoMode] = useState<VideoMode>('multi_reference');
+  const [resolution, setResolution] = useState('720p');
+  const [duration, setDuration] = useState('5');
 
   const selectedCharacter = data.characters.find((character) => character.id === characterId) ?? null;
   const selectedDecor = data.decors.find((decor) => decor.id === decorId) ?? null;
@@ -82,6 +99,9 @@ export function CreationClient({ data }: { data: CreationData }) {
           <input type="hidden" name="aspectRatio" value={aspectRatio} />
           <input type="hidden" name="strength" value={strength} />
           <input type="hidden" name="model" value={model} />
+          <input type="hidden" name="videoMode" value={videoMode} />
+          <input type="hidden" name="resolution" value={resolution} />
+          <input type="hidden" name="duration" value={duration} />
 
           <PanelBlock>
             <div className="grid grid-cols-2 gap-2">
@@ -95,6 +115,28 @@ export function CreationClient({ data }: { data: CreationData }) {
               </ModeButton>
             </div>
           </PanelBlock>
+
+          {mode === 'video' && (
+            <PanelBlock>
+              <Label className="text-white/80">Enhancor mode</Label>
+              <div className="mt-3 grid gap-2">
+                {videoModes.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setVideoMode(item.value)}
+                    className={cn(
+                      'rounded-xl border border-white/10 bg-black/25 p-3 text-left transition-all hover:bg-white/8',
+                      videoMode === item.value && 'border-[#d943c5]/50 bg-[#d943c5]/15 shadow-[0_0_24px_rgba(217,67,197,0.14)]',
+                    )}
+                  >
+                    <span className="block text-sm font-semibold text-white">{item.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-white/40">{item.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </PanelBlock>
+          )}
 
           <PanelBlock>
             <Label className="text-white/80">Character</Label>
@@ -155,7 +197,7 @@ export function CreationClient({ data }: { data: CreationData }) {
 
           <div className="grid grid-cols-2 gap-3">
             <PanelBlock>
-              <Label className="text-white/80">Output</Label>
+              <Label className="text-white/80">Aspect</Label>
               <Select value={aspectRatio} onValueChange={(value) => setAspectRatio(value ?? '9:16')}>
                 <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
                   <SelectValue />
@@ -169,36 +211,89 @@ export function CreationClient({ data }: { data: CreationData }) {
               </Select>
             </PanelBlock>
             <PanelBlock>
-              <Label className="text-white/80">Coherence</Label>
-              <Select value={strength} onValueChange={(value) => setStrength(value ?? 'balanced')}>
+              <Label className="text-white/80">{mode === 'video' ? 'Resolution' : 'Coherence'}</Label>
+              {mode === 'video' ? (
+                <Select value={resolution} onValueChange={(value) => setResolution(value ?? '720p')}>
+                  <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="480p">480p</SelectItem>
+                    <SelectItem value="720p">720p</SelectItem>
+                    <SelectItem value="1080p">1080p</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select value={strength} onValueChange={(value) => setStrength(value ?? 'balanced')}>
+                  <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="strict">Strict refs</SelectItem>
+                    <SelectItem value="balanced">Balanced</SelectItem>
+                    <SelectItem value="creative">Creative</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </PanelBlock>
+          </div>
+
+          {mode === 'video' && (
+            <>
+              <PanelBlock>
+                <div className="grid grid-cols-3 gap-2">
+                  {['5', '10', '15'].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setDuration(value)}
+                      className={cn(
+                        'rounded-xl border border-white/10 bg-black/25 py-2 text-sm font-semibold text-white/50',
+                        duration === value && 'bg-white text-black',
+                      )}
+                    >
+                      {value}s
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/55">
+                  <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                    <input type="checkbox" name="fastMode" />
+                    Fast mode
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                    <input type="checkbox" name="isUncensored" />
+                    Uncensored
+                  </label>
+                  <label className="col-span-2 flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                    <input type="checkbox" name="fullAccess" defaultChecked />
+                    Full access for human faces
+                  </label>
+                </div>
+              </PanelBlock>
+
+              <VideoModeFields videoMode={videoMode} />
+            </>
+          )}
+
+          {mode === 'image' && (
+            <PanelBlock>
+              <Label className="text-white/80">Model</Label>
+              <Select value={model} onValueChange={(value) => setModel(value ?? 'nano-banana')}>
                 <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="strict">Strict refs</SelectItem>
-                  <SelectItem value="balanced">Balanced</SelectItem>
-                  <SelectItem value="creative">Creative</SelectItem>
+                  <SelectItem value="nano-banana">Nano Banana</SelectItem>
+                  <SelectItem value="nano-banana-pro">Nano Banana Pro</SelectItem>
+                  <SelectItem value="nano-banana-2">Nano Banana 2</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="mt-2 text-xs leading-5 text-white/35">
+                Image providers need their exact Enhancor docs before all models can run through Enhancor.
+              </p>
             </PanelBlock>
-          </div>
-
-          <PanelBlock>
-            <Label className="text-white/80">Model</Label>
-            <Select value={model} onValueChange={(value) => setModel(value ?? 'nano-banana')}>
-              <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="nano-banana">Nano Banana</SelectItem>
-                <SelectItem value="nano-banana-pro">Nano Banana Pro</SelectItem>
-                <SelectItem value="nano-banana-2">Nano Banana 2</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="mt-2 text-xs leading-5 text-white/35">
-              Image mode sends character + decor references to the backend provider. Video mode is prepared but needs the video API adapter.
-            </p>
-          </PanelBlock>
+          )}
 
           <div className="sticky bottom-0 -mx-4 border-t border-white/10 bg-[#101110]/95 p-4 backdrop-blur">
             <div className="mb-3 flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-2">
@@ -330,6 +425,139 @@ function ReferenceStrip({
             ) : null}
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+function VideoModeFields({ videoMode }: { videoMode: VideoMode }) {
+  if (videoMode === 'text-to-video') {
+    return (
+      <PanelBlock>
+        <p className="text-sm font-semibold text-white">Prompt only</p>
+        <p className="mt-1 text-xs leading-5 text-white/40">
+          This mode ignores character/decor references. Use it for pure cinematic shots generated from text.
+        </p>
+      </PanelBlock>
+    );
+  }
+
+  if (videoMode === 'multi_frame') {
+    return (
+      <PanelBlock>
+        <Label className="text-white/80">Multi-frame shots</Label>
+        <Textarea
+          name="multiFramePrompts"
+          rows={5}
+          placeholder={'5 | Wide establishing shot of the bedroom\n5 | Camera pushes toward the mirror'}
+          className="mt-3 border-white/10 bg-black/30 text-white placeholder:text-white/30"
+        />
+        <p className="mt-2 text-xs leading-5 text-white/35">
+          One segment per line: duration, pipe, prompt. Total must stay between 4 and 15 seconds.
+        </p>
+        <ExternalMediaFields showImages={false} showVideos showAudios />
+      </PanelBlock>
+    );
+  }
+
+  if (videoMode === 'ugc') {
+    return (
+      <PanelBlock>
+        <Label className="text-white/80">UGC assets</Label>
+        <Textarea
+          name="productUrls"
+          rows={3}
+          placeholder="Product image URLs, one per line"
+          className="mt-3 border-white/10 bg-black/30 text-white placeholder:text-white/30"
+        />
+        <Textarea
+          name="influencerUrls"
+          rows={3}
+          placeholder="Influencer image URLs, one per line. Empty = use selected character refs."
+          className="mt-3 border-white/10 bg-black/30 text-white placeholder:text-white/30"
+        />
+      </PanelBlock>
+    );
+  }
+
+  if (videoMode === 'lipsyncing') {
+    return (
+      <PanelBlock>
+        <Label className="text-white/80">Lip-sync audio</Label>
+        <input
+          name="lipsyncingAudio"
+          placeholder="https://.../voiceover.mp3"
+          className="mt-3 h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white placeholder:text-white/30"
+        />
+        <p className="mt-2 text-xs leading-5 text-white/35">
+          Audio must be under 15 seconds. Prompt can include @audio1.
+        </p>
+        <ExternalMediaFields showImages={false} showVideos showAudios={false} />
+      </PanelBlock>
+    );
+  }
+
+  if (videoMode === 'first_n_last_frames') {
+    return (
+      <PanelBlock>
+        <Label className="text-white/80">First / last frames</Label>
+        <input
+          name="firstFrameImage"
+          placeholder="First frame image URL. Empty = first selected ref."
+          className="mt-3 h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white placeholder:text-white/30"
+        />
+        <input
+          name="lastFrameImage"
+          placeholder="Last frame image URL. Empty = second selected ref."
+          className="mt-3 h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white placeholder:text-white/30"
+        />
+        <ExternalMediaFields showImages={false} showVideos showAudios />
+      </PanelBlock>
+    );
+  }
+
+  return (
+    <PanelBlock>
+      <Label className="text-white/80">Extra media references</Label>
+      <ExternalMediaFields showImages showVideos showAudios />
+    </PanelBlock>
+  );
+}
+
+function ExternalMediaFields({
+  showImages,
+  showVideos,
+  showAudios,
+}: {
+  showImages: boolean;
+  showVideos: boolean;
+  showAudios: boolean;
+}) {
+  return (
+    <div className="mt-3 space-y-3">
+      {showImages && (
+        <Textarea
+          name="externalImages"
+          rows={3}
+          placeholder="Extra image URLs, one per line"
+          className="border-white/10 bg-black/30 text-white placeholder:text-white/30"
+        />
+      )}
+      {showVideos && (
+        <Textarea
+          name="externalVideos"
+          rows={2}
+          placeholder="Reference video URLs, one per line"
+          className="border-white/10 bg-black/30 text-white placeholder:text-white/30"
+        />
+      )}
+      {showAudios && (
+        <Textarea
+          name="externalAudios"
+          rows={2}
+          placeholder="Reference audio URLs, one per line"
+          className="border-white/10 bg-black/30 text-white placeholder:text-white/30"
+        />
       )}
     </div>
   );
