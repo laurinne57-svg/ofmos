@@ -37,6 +37,12 @@ type CleanItem = {
   error?: string;
 };
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Cleaning failed';
+}
+
 function detectKind(file: File): CleanItem['kind'] {
   if (file.type.startsWith('image/')) return 'image';
   if (file.type.startsWith('video/')) return 'video';
@@ -89,6 +95,14 @@ async function loadFfmpeg(ffmpeg: FFmpeg) {
   });
 }
 
+function inputExtension(file: File) {
+  if (file.type === 'video/mp4') return 'mp4';
+  if (file.type === 'video/quicktime') return 'mov';
+  if (file.type === 'video/webm') return 'webm';
+  const ext = file.name.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase();
+  return ext || 'mp4';
+}
+
 function videoOutputName(file: File) {
   return { name: cleanName(file.name, 'mp4'), ext: 'mp4' };
 }
@@ -96,7 +110,13 @@ function videoOutputName(file: File) {
 async function cleanVideo(ffmpeg: FFmpeg, file: File) {
   await loadFfmpeg(ffmpeg);
 
-  const inputExt = file.name.split('.').pop() || 'mp4';
+  const logs: string[] = [];
+  ffmpeg.on('log', ({ message }) => {
+    if (message) logs.push(message);
+    if (logs.length > 12) logs.shift();
+  });
+
+  const inputExt = inputExtension(file);
   const inputName = `input-${crypto.randomUUID()}.${inputExt}`;
   const { name: outputName, ext } = videoOutputName(file);
   const outputNameFs = `output-${crypto.randomUUID()}.${ext}`;
@@ -107,10 +127,12 @@ async function cleanVideo(ffmpeg: FFmpeg, file: File) {
     '-i',
     inputName,
     '-map',
-    '0',
+    '0:v:0',
+    '-map',
+    '0:a?',
+    '-dn',
+    '-sn',
     '-map_metadata',
-    '-1',
-    '-map_metadata:s',
     '-1',
     '-map_chapters',
     '-1',
@@ -126,33 +148,45 @@ async function cleanVideo(ffmpeg: FFmpeg, file: File) {
 
   try {
     await ffmpeg.exec(args);
-  } catch {
-    await ffmpeg.exec([
-      '-i',
-      inputName,
-      '-map',
-      '0',
-      '-map_metadata',
-      '-1',
-      '-map_metadata:s',
-      '-1',
-      '-map_chapters',
-      '-1',
-      '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-crf',
-      '20',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '160k',
-      '-movflags',
-      '+faststart',
-      '-y',
-      outputNameFs,
-    ]);
+  } catch (error) {
+    try {
+      await ffmpeg.exec([
+        '-i',
+        inputName,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a?',
+        '-dn',
+        '-sn',
+        '-map_metadata',
+        '-1',
+        '-map_chapters',
+        '-1',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '20',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '160k',
+        '-movflags',
+        '+faststart',
+        '-y',
+        outputNameFs,
+      ]);
+    } catch (fallbackError) {
+      throw new Error([
+        `Stream copy failed: ${getErrorMessage(error)}`,
+        `Re-encode failed: ${getErrorMessage(fallbackError)}`,
+        logs.length ? `FFmpeg: ${logs.slice(-4).join(' | ')}` : '',
+      ].filter(Boolean).join(' / '));
+    }
   }
 
   const data = await ffmpeg.readFile(outputNameFs);
@@ -407,8 +441,12 @@ export function CleanerClient() {
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {formatBytes(item.beforeBytes)}
                           {item.afterBytes ? ` -> ${formatBytes(item.afterBytes)}` : ''}
-                          {item.error ? ` · ${item.error}` : ''}
                         </p>
+                        {item.error && (
+                          <p className="mt-1 line-clamp-2 text-xs text-destructive" title={item.error}>
+                            {item.error}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center justify-between gap-2 sm:justify-end">
