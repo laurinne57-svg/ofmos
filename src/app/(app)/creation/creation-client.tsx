@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
+  ChevronDown,
   Download01,
   FilterLines,
   Grid01,
@@ -117,101 +118,115 @@ export function CreationClient({ data }: { data: CreationData }) {
           </PanelBlock>
 
           {mode === 'video' && (
-            <PanelBlock>
-              <Label className="text-white/80">Enhancor mode</Label>
-              <div className="mt-3 grid gap-2">
+            <CompactSection
+              title="Enhancor mode"
+              summary={videoModes.find((item) => item.value === videoMode)?.label ?? 'Multi Reference'}
+              defaultOpen
+            >
+              <div className="grid gap-2">
                 {videoModes.map((item) => (
                   <button
                     key={item.value}
                     type="button"
                     onClick={() => setVideoMode(item.value)}
                     className={cn(
-                      'rounded-xl border border-white/10 bg-black/25 p-3 text-left transition-all hover:bg-white/8',
+                      'rounded-xl border border-white/10 bg-black/25 p-2.5 text-left transition-all hover:bg-white/8',
                       videoMode === item.value && 'border-[#d943c5]/50 bg-[#d943c5]/15 shadow-[0_0_24px_rgba(217,67,197,0.14)]',
                     )}
                   >
                     <span className="block text-sm font-semibold text-white">{item.label}</span>
-                    <span className="mt-1 block text-xs leading-5 text-white/40">{item.hint}</span>
+                    <span className="mt-0.5 block text-xs leading-4 text-white/40">{item.hint}</span>
                   </button>
                 ))}
               </div>
-            </PanelBlock>
+            </CompactSection>
           )}
 
-          <PanelBlock>
-            <Label className="text-white/80">Character</Label>
-            <Select value={characterId} onValueChange={(value) => setCharacterId(value ?? '')}>
-              <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
-                <SelectValue placeholder="Select #character" />
-              </SelectTrigger>
-              <SelectContent>
-                {data.characters.map((character) => (
-                  <SelectItem key={character.id} value={character.id}>
-                    #{character.handle} · {character.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <ReferenceStrip references={characterRefs} empty="No character refs yet" />
-          </PanelBlock>
+          <CompactSection
+            title="References"
+            summary={[
+              selectedCharacter ? `#${selectedCharacter.handle}` : 'No character',
+              selectedDecor ? `#${selectedDecor.handle}` : 'No decor',
+            ].join(' · ')}
+            defaultOpen
+          >
+            <div className="grid gap-3">
+              <div>
+                <Label className="text-white/80">Character</Label>
+                <Select value={characterId} onValueChange={(value) => setCharacterId(value ?? '')}>
+                  <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
+                    <SelectValue placeholder="Select #character" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data.characters.map((character) => (
+                      <SelectItem key={character.id} value={character.id}>
+                        #{character.handle} · {character.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <ReferenceStrip references={characterRefs} empty="No character refs yet" />
+              </div>
 
-          <PanelBlock>
-            <Label className="text-white/80">Décor</Label>
-            <Select value={decorId} onValueChange={(value) => setDecorId(value ?? '')}>
-              <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
-                <SelectValue placeholder="Select #decor" />
-              </SelectTrigger>
-              <SelectContent>
-                {data.decors.map((decor) => (
-                  <SelectItem key={decor.id} value={decor.id}>
-                    #{decor.handle} · {decor.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <ReferenceStrip references={decorRefs} empty="No decor refs yet" />
-          </PanelBlock>
-
-          <PanelBlock>
-            <div className="flex items-center justify-between">
-              <Label className="text-white/80">Prompt</Label>
-              <span className="text-xs text-white/35">Use #ana #chambre1</span>
+              <div>
+                <Label className="text-white/80">Décor</Label>
+                <Select value={decorId} onValueChange={(value) => setDecorId(value ?? '')}>
+                  <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
+                    <SelectValue placeholder="Select #decor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data.decors.map((decor) => (
+                      <SelectItem key={decor.id} value={decor.id}>
+                        #{decor.handle} · {decor.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <ReferenceStrip references={decorRefs} empty="No decor refs yet" />
+              </div>
             </div>
+          </CompactSection>
+
+          <CompactSection title="Prompt" summary={promptPreview || 'Use #ana #chambre1'} defaultOpen>
             <Textarea
               name="prompt"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              rows={8}
+              rows={6}
               placeholder="Décris la scène, le cadrage, la pose, la lumière, le style..."
-              className="mt-3 border-white/10 bg-black/30 text-white placeholder:text-white/30"
+              className="border-white/10 bg-black/30 text-white placeholder:text-white/30"
               required
             />
-            <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="mt-2 rounded-xl border border-white/10 bg-black/20 p-2.5">
               <div className="mb-1 flex items-center gap-2 text-xs font-medium text-white/45">
                 <Hash01 className="h-3.5 w-3.5" />
                 Prompt resolved
               </div>
               <p className="line-clamp-3 text-sm text-white/75">{promptPreview || 'No prompt yet'}</p>
             </div>
-          </PanelBlock>
+          </CompactSection>
 
-          <div className="grid grid-cols-2 gap-3">
-            <PanelBlock>
-              <Label className="text-white/80">Aspect</Label>
-              <Select value={aspectRatio} onValueChange={(value) => setAspectRatio(value ?? '9:16')}>
-                <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="9:16">9:16 vertical</SelectItem>
-                  <SelectItem value="4:5">4:5 feed</SelectItem>
-                  <SelectItem value="1:1">1:1 square</SelectItem>
-                  <SelectItem value="16:9">16:9 wide</SelectItem>
-                </SelectContent>
-              </Select>
-            </PanelBlock>
-            <PanelBlock>
-              <Label className="text-white/80">{mode === 'video' ? 'Resolution' : 'Coherence'}</Label>
+          <CompactSection
+            title="Output"
+            summary={mode === 'video' ? `${duration}s · ${resolution} · ${aspectRatio}` : `${outputCount} output · ${aspectRatio} · ${strength}`}
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-white/80">Aspect</Label>
+                <Select value={aspectRatio} onValueChange={(value) => setAspectRatio(value ?? '9:16')}>
+                  <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="9:16">9:16 vertical</SelectItem>
+                    <SelectItem value="4:5">4:5 feed</SelectItem>
+                    <SelectItem value="1:1">1:1 square</SelectItem>
+                    <SelectItem value="16:9">16:9 wide</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-white/80">{mode === 'video' ? 'Resolution' : 'Coherence'}</Label>
               {mode === 'video' ? (
                 <Select value={resolution} onValueChange={(value) => setResolution(value ?? '720p')}>
                   <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
@@ -235,13 +250,14 @@ export function CreationClient({ data }: { data: CreationData }) {
                   </SelectContent>
                 </Select>
               )}
-            </PanelBlock>
-          </div>
+              </div>
+            </div>
+          </CompactSection>
 
           {mode === 'video' && (
             <>
-              <PanelBlock>
-                <div className="grid grid-cols-3 gap-2">
+              <CompactSection title="Timing & access" summary={`${duration}s · ${resolution}`}>
+                <div className="grid grid-cols-3 gap-1.5">
                   {['5', '10', '15'].map((value) => (
                     <button
                       key={value}
@@ -270,14 +286,19 @@ export function CreationClient({ data }: { data: CreationData }) {
                     Full access for human faces
                   </label>
                 </div>
-              </PanelBlock>
+              </CompactSection>
 
-              <VideoModeFields videoMode={videoMode} />
+              <CompactSection
+                title={`${videoModes.find((item) => item.value === videoMode)?.label ?? 'Mode'} options`}
+                summary="Mode-specific fields"
+              >
+                <VideoModeFields videoMode={videoMode} />
+              </CompactSection>
             </>
           )}
 
           {mode === 'image' && (
-            <PanelBlock>
+            <CompactSection title="Image model" summary={model}>
               <Label className="text-white/80">Model</Label>
               <Select value={model} onValueChange={(value) => setModel(value ?? 'nano-banana')}>
                 <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
@@ -292,7 +313,7 @@ export function CreationClient({ data }: { data: CreationData }) {
               <p className="mt-2 text-xs leading-5 text-white/35">
                 Image providers need their exact Enhancor docs before all models can run through Enhancor.
               </p>
-            </PanelBlock>
+            </CompactSection>
           )}
 
           <div className="sticky bottom-0 -mx-4 border-t border-white/10 bg-[#101110]/95 p-4 backdrop-blur">
@@ -388,6 +409,36 @@ function PanelBlock({ children }: { children: ReactNode }) {
   return <div className="rounded-2xl border border-white/8 bg-white/[0.035] p-4">{children}</div>;
 }
 
+function CompactSection({
+  title,
+  summary,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  summary?: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className="group rounded-2xl border border-white/8 bg-white/[0.035] [&_summary::-webkit-details-marker]:hidden"
+    >
+      <summary className="flex cursor-pointer select-none items-center justify-between gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-white">{title}</p>
+          {summary && <p className="mt-0.5 truncate text-xs text-white/38">{summary}</p>}
+        </div>
+        <ChevronDown className="h-4 w-4 shrink-0 text-white/45 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-white/8 px-4 py-3">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 function ModeButton({ active, children, onClick }: { active: boolean; children: ReactNode; onClick: () => void }) {
   return (
     <button
@@ -433,18 +484,18 @@ function ReferenceStrip({
 function VideoModeFields({ videoMode }: { videoMode: VideoMode }) {
   if (videoMode === 'text-to-video') {
     return (
-      <PanelBlock>
+      <div>
         <p className="text-sm font-semibold text-white">Prompt only</p>
         <p className="mt-1 text-xs leading-5 text-white/40">
           This mode ignores character/decor references. Use it for pure cinematic shots generated from text.
         </p>
-      </PanelBlock>
+      </div>
     );
   }
 
   if (videoMode === 'multi_frame') {
     return (
-      <PanelBlock>
+      <div>
         <Label className="text-white/80">Multi-frame shots</Label>
         <Textarea
           name="multiFramePrompts"
@@ -456,13 +507,13 @@ function VideoModeFields({ videoMode }: { videoMode: VideoMode }) {
           One segment per line: duration, pipe, prompt. Total must stay between 4 and 15 seconds.
         </p>
         <ExternalMediaFields showImages={false} showVideos showAudios />
-      </PanelBlock>
+      </div>
     );
   }
 
   if (videoMode === 'ugc') {
     return (
-      <PanelBlock>
+      <div>
         <Label className="text-white/80">UGC assets</Label>
         <Textarea
           name="productUrls"
@@ -476,13 +527,13 @@ function VideoModeFields({ videoMode }: { videoMode: VideoMode }) {
           placeholder="Influencer image URLs, one per line. Empty = use selected character refs."
           className="mt-3 border-white/10 bg-black/30 text-white placeholder:text-white/30"
         />
-      </PanelBlock>
+      </div>
     );
   }
 
   if (videoMode === 'lipsyncing') {
     return (
-      <PanelBlock>
+      <div>
         <Label className="text-white/80">Lip-sync audio</Label>
         <input
           name="lipsyncingAudio"
@@ -493,13 +544,13 @@ function VideoModeFields({ videoMode }: { videoMode: VideoMode }) {
           Audio must be under 15 seconds. Prompt can include @audio1.
         </p>
         <ExternalMediaFields showImages={false} showVideos showAudios={false} />
-      </PanelBlock>
+      </div>
     );
   }
 
   if (videoMode === 'first_n_last_frames') {
     return (
-      <PanelBlock>
+      <div>
         <Label className="text-white/80">First / last frames</Label>
         <input
           name="firstFrameImage"
@@ -512,15 +563,15 @@ function VideoModeFields({ videoMode }: { videoMode: VideoMode }) {
           className="mt-3 h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white placeholder:text-white/30"
         />
         <ExternalMediaFields showImages={false} showVideos showAudios />
-      </PanelBlock>
+      </div>
     );
   }
 
   return (
-    <PanelBlock>
+    <div>
       <Label className="text-white/80">Extra media references</Label>
       <ExternalMediaFields showImages showVideos showAudios />
-    </PanelBlock>
+    </div>
   );
 }
 
