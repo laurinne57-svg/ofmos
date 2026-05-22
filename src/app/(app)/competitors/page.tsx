@@ -1,8 +1,17 @@
-export default function CompetitorsPage() {
-  return (
-    <div>
-      <h1 className="text-3xl font-bold">Competitors</h1>
-      <p className="mt-2 text-muted-foreground">Competitor tracking — coming in Phase 4</p>
-    </div>
-  );
+import { getNiches } from '@/lib/db/queries/niches';
+import { getCompetitors } from '@/lib/db/queries/competitors';
+import { CompetitorsClient } from './competitors-client';
+
+export default async function CompetitorsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; nicheId?: string }>;
+}) {
+  const params = await searchParams;
+  const [data, niches] = await Promise.all([
+    getCompetitors({ search: params.search, nicheId: params.nicheId }),
+    getNiches(),
+  ]);
+
+  return <CompetitorsClient data={data} niches={niches} />;
 }

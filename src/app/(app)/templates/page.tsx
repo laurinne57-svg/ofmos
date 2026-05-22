@@ -1,8 +1,16 @@
-export default function TemplatesPage() {
-  return (
-    <div>
-      <h1 className="text-3xl font-bold">DM Templates</h1>
-      <p className="mt-2 text-muted-foreground">Template library — coming in Phase 3</p>
-    </div>
-  );
+import { getTemplates } from '@/lib/db/queries/templates';
+import { TemplatesClient } from './templates-client';
+
+export default async function TemplatesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; platform?: string }>;
+}) {
+  const params = await searchParams;
+  const data = await getTemplates({
+    search: params.search,
+    platform: params.platform,
+  });
+
+  return <TemplatesClient data={data} />;
 }

@@ -1,8 +1,20 @@
-export default function ContentDetailPage() {
-  return (
-    <div>
-      <h1 className="text-3xl font-bold">Video Detail</h1>
-      <p className="mt-2 text-muted-foreground">Variations and posting tracker — coming in Phase 5</p>
-    </div>
-  );
+import { notFound } from 'next/navigation';
+
+import { getSourceVideoById, getVideoVariations } from '@/lib/db/queries/content';
+import { VideoDetailClient } from './video-detail-client';
+
+export default async function ContentDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const [video, variations] = await Promise.all([
+    getSourceVideoById(id),
+    getVideoVariations(id),
+  ]);
+
+  if (!video) notFound();
+
+  return <VideoDetailClient video={video} variations={variations} />;
 }

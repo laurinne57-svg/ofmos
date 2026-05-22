@@ -21,11 +21,17 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError('Backend Supabase indisponible. Vérifie le Project URL, anon key et DATABASE_URL.');
       setLoading(false);
       return;
     }
@@ -39,11 +45,17 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signUp({ email, password });
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signUp({ email, password });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError('Backend Supabase indisponible. Vérifie le Project URL, anon key et DATABASE_URL.');
       setLoading(false);
       return;
     }
@@ -53,54 +65,63 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-2xl">OFM-OS</CardTitle>
-          <CardDescription>Sign in to your agency dashboard</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
-            {error && <p className="text-sm text-red-500">{error}</p>}
-            <div className="flex gap-2">
-              <Button type="submit" className="flex-1" disabled={loading}>
-                {loading ? 'Loading...' : 'Sign In'}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                disabled={loading}
-                onClick={handleSignUp}
-              >
-                Sign Up
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="w-full max-w-sm px-4">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary">
+            <span className="text-lg font-bold text-primary-foreground">O</span>
+          </div>
+          <h1 className="text-xl font-bold">OFM-OS</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Sign in to your agency dashboard</p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                />
+              </div>
+              {error && (
+                <div className="rounded-lg bg-red-500/10 p-2.5 text-sm text-red-600 dark:text-red-400">
+                  {error}
+                </div>
+              )}
+              <div className="flex gap-2 pt-1">
+                <Button type="submit" className="flex-1" disabled={loading}>
+                  {loading ? 'Loading...' : 'Sign In'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  disabled={loading}
+                  onClick={handleSignUp}
+                >
+                  Sign Up
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

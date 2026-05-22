@@ -1,8 +1,22 @@
-export default function SettingsPage() {
+import { getExpenses, getExpenseStats } from '@/lib/db/queries/expenses';
+import { getInspirationItems } from '@/lib/db/queries/inspiration';
+import { getNiches } from '@/lib/db/queries/niches';
+import { SettingsClient } from './settings-client';
+
+export default async function SettingsPage() {
+  const [expenses, expenseStats, inspirations, niches] = await Promise.all([
+    getExpenses(),
+    getExpenseStats(),
+    getInspirationItems(),
+    getNiches(),
+  ]);
+
   return (
-    <div>
-      <h1 className="text-3xl font-bold">Settings</h1>
-      <p className="mt-2 text-muted-foreground">App configuration</p>
-    </div>
+    <SettingsClient
+      expenses={expenses}
+      expenseStats={expenseStats}
+      inspirations={inspirations}
+      niches={niches}
+    />
   );
 }

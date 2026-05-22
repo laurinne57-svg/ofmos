@@ -1,8 +1,16 @@
-export default function DifferenciantsPage() {
-  return (
-    <div>
-      <h1 className="text-3xl font-bold">Différenciants</h1>
-      <p className="mt-2 text-muted-foreground">Differentiator library — coming in Phase 3</p>
-    </div>
-  );
+import { getDifferenciants } from '@/lib/db/queries/differenciants';
+import { DifferenciantsClient } from './differenciants-client';
+
+export default async function DifferenciantsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; category?: string }>;
+}) {
+  const params = await searchParams;
+  const data = await getDifferenciants({
+    search: params.search,
+    category: params.category,
+  });
+
+  return <DifferenciantsClient data={data} />;
 }
