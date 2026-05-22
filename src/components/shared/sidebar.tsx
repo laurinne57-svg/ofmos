@@ -7,6 +7,7 @@ import {
   BarChart01,
   BookOpen01,
   Eye,
+  FileShield02,
   Film02,
   Home01,
   Image03,
@@ -57,6 +58,7 @@ const navSections = [
       { label: 'Création', href: '/creation', icon: MagicWand02 },
       { label: 'AI Studio', href: '/ai-studio', icon: Image03 },
       { label: 'Video Tools', href: '/video-tools', icon: VideoRecorder },
+      { label: 'Cleaner', href: '/cleaner', icon: FileShield02 },
     ],
   },
   {
