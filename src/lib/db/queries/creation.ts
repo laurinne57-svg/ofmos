@@ -17,6 +17,11 @@ async function signedReferenceUrl(bucket: string, path: string) {
   return data?.signedUrl ?? null;
 }
 
+async function signedOutputUrl(output: { bucket?: string | null; path?: string | null; sourceUrl?: string | null }) {
+  if (!output.bucket || !output.path) return output.sourceUrl ?? null;
+  return signedReferenceUrl(output.bucket, output.path);
+}
+
 export async function getCreationData() {
   const [characters, decors, references, jobs, creditBalance] = await Promise.all([
     db
@@ -48,13 +53,13 @@ export async function getCreationData() {
 
   const signedJobs = await Promise.all(
     jobs.map(async (job) => {
-      const config = job.config as { outputs?: Array<{ bucket: string; path: string; sourceUrl?: string }> } | null;
+      const config = job.config as { outputs?: Array<{ bucket?: string | null; path?: string | null; sourceUrl?: string | null }> } | null;
       if (!config?.outputs?.length) return { ...job, signedOutputs: [] };
 
       const signedOutputs = await Promise.all(
         config.outputs.map(async (output) => ({
           ...output,
-          signedUrl: await signedReferenceUrl(output.bucket, output.path),
+          signedUrl: await signedOutputUrl(output),
         })),
       );
 

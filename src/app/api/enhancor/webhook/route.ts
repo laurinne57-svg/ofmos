@@ -23,13 +23,22 @@ async function saveGeneratedMedia(input: {
     .from('ai-output')
     .upload(path, bytes, { contentType, upsert: false });
 
-  if (error) throw error;
+  if (error) {
+    return {
+      bucket: null,
+      path: null,
+      sourceUrl: input.resultUrl,
+      contentType,
+      storageError: error.message,
+    };
+  }
 
   return {
     bucket: 'ai-output',
     path,
     sourceUrl: input.resultUrl,
     contentType,
+    storageError: null,
   };
 }
 
@@ -124,6 +133,9 @@ export async function POST(request: Request) {
         status: 'done',
         resultBucket: outputs[0]?.bucket ?? null,
         resultPath: outputs[0]?.path ?? null,
+        errorMessage: outputs.some((output) => output.storageError)
+          ? 'Generated successfully, but Supabase private storage copy failed. Showing provider CDN output.'
+          : null,
         updatedAt: new Date(),
         config: {
           ...currentConfig,
