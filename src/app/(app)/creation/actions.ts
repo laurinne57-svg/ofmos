@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { eq } from 'drizzle-orm';
+import { estimateGenerationCost } from '@/lib/ai/credits';
 import { buildGenerationPrompt, extractMentions, normalizeMention } from '@/lib/ai/mentions';
 import {
   buildProviderPayload,
@@ -135,6 +136,7 @@ export async function createCreationJob(formData: FormData): Promise<void> {
   const videoMode = (String(formData.get('videoMode') ?? 'multi_reference') as EnhancorVideoMode);
   const duration = String(formData.get('duration') ?? '5');
   const resolution = String(formData.get('resolution') ?? '720p');
+  const imageResolution = String(formData.get('imageResolution') ?? '2K');
   const fastMode = formData.get('fastMode') === 'on';
   const fullAccess = formData.get('fullAccess') !== 'off';
   const isUncensored = formData.get('isUncensored') === 'on';
@@ -186,6 +188,14 @@ export async function createCreationJob(formData: FormData): Promise<void> {
   });
 
   const providerState = getProviderState();
+  const estimatedCost = estimateGenerationCost({
+    mode,
+    videoMode,
+    duration,
+    resolution,
+    imageResolution,
+    fastMode,
+  });
   const [job] = await db.insert(aiGenerationJobs).values({
     characterId: selectedCharacter?.id ?? null,
     environmentId: selectedDecor?.id ?? null,
@@ -201,7 +211,9 @@ export async function createCreationJob(formData: FormData): Promise<void> {
       aspectRatio,
       outputCount,
       strength,
+      imageResolution,
       providerState,
+      estimatedCost,
       payload: basePayload,
       videoMode: mode === 'video' ? videoMode : null,
       referenceCounts: {
@@ -270,7 +282,9 @@ export async function createCreationJob(formData: FormData): Promise<void> {
             aspectRatio,
             outputCount,
             strength,
+            imageResolution,
             providerState,
+            estimatedCost,
             payload: result.payload,
             videoMode,
             videoModeLabel: enhancorVideoModes[videoMode]?.label,
@@ -335,7 +349,9 @@ export async function createCreationJob(formData: FormData): Promise<void> {
           aspectRatio,
           outputCount,
           strength,
+          imageResolution,
           providerState,
+          estimatedCost,
           payload: result.payload,
           external: {
             requestId: result.requestId,

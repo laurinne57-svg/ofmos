@@ -1,5 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
 
+import { getEnhancorCreditBalance } from '@/lib/ai/providers';
 import { db } from '@/lib/db';
 import {
   aiCharacters,
@@ -17,7 +18,7 @@ async function signedReferenceUrl(bucket: string, path: string) {
 }
 
 export async function getCreationData() {
-  const [characters, decors, references, jobs] = await Promise.all([
+  const [characters, decors, references, jobs, creditBalance] = await Promise.all([
     db
       .select({
         id: aiCharacters.id,
@@ -35,6 +36,7 @@ export async function getCreationData() {
     db.select().from(aiEnvironments).orderBy(desc(aiEnvironments.createdAt)),
     db.select().from(aiReferenceImages).orderBy(desc(aiReferenceImages.createdAt)),
     db.select().from(aiGenerationJobs).orderBy(desc(aiGenerationJobs.createdAt)).limit(60),
+    getEnhancorCreditBalance(),
   ]);
 
   const signedReferences = await Promise.all(
@@ -65,5 +67,6 @@ export async function getCreationData() {
     decors,
     references: signedReferences,
     jobs: signedJobs,
+    creditBalance,
   };
 }

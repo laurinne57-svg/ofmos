@@ -21,6 +21,14 @@ export type NanoBananaQueueResult = {
   raw: unknown;
 };
 
+export type EnhancorCreditBalance = {
+  availableCredits: number | null;
+  totalCredits: number | null;
+  raw: unknown;
+  endpoint: string | null;
+  error?: string;
+};
+
 function getImageApiKey() {
   return process.env.NANO_BANANA_API_KEY || process.env.ENHANCOR_API_KEY;
 }
@@ -198,6 +206,73 @@ export async function queueNanoBananaImage(input: {
 
 export function getEnhancorBaseUrl() {
   return (process.env.ENHANCOR_BASE_URL || 'https://apireq.enhancor.ai/api').replace(/\/$/, '');
+}
+
+export async function getEnhancorCreditBalance(): Promise<EnhancorCreditBalance> {
+  const apiKey = process.env.ENHANCOR_API_KEY;
+  if (!apiKey) {
+    return {
+      availableCredits: null,
+      totalCredits: null,
+      raw: null,
+      endpoint: null,
+      error: 'ENHANCOR_API_KEY is not configured',
+    };
+  }
+
+  const baseUrl = getEnhancorBaseUrl();
+  const paths = ['/credits', '/credits/balance', '/credit/balance', '/balance'];
+
+  for (const path of paths) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        headers: { 'x-api-key': apiKey },
+        cache: 'no-store',
+      });
+
+      if (response.status === 404 || response.status === 405) continue;
+
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        continue;
+      }
+
+      const credits =
+        numberOrNull(json?.credits?.total) ??
+        numberOrNull(json?.availableCredits) ??
+        numberOrNull(json?.balance_credits) ??
+        numberOrNull(json?.balance) ??
+        numberOrNull(json?.credits);
+
+      const total =
+        numberOrNull(json?.totalCredits) ??
+        numberOrNull(json?.total_purchased) ??
+        numberOrNull(json?.credits?.total) ??
+        credits;
+
+      return {
+        availableCredits: credits,
+        totalCredits: total,
+        raw: json,
+        endpoint: path,
+      };
+    } catch {
+      // Try the next common balance endpoint shape.
+    }
+  }
+
+  return {
+    availableCredits: null,
+    totalCredits: null,
+    raw: null,
+    endpoint: null,
+    error: 'No Enhancor credit balance endpoint responded',
+  };
+}
+
+function numberOrNull(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 export async function queueEnhancorVideo(input: {

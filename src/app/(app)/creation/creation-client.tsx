@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { creditsFromConfig, estimateGenerationCost } from '@/lib/ai/credits';
 import { cn } from '@/lib/utils';
 import { createCreationJob } from './actions';
 
@@ -61,9 +62,11 @@ export function CreationClient({ data }: { data: CreationData }) {
   const [aspectRatio, setAspectRatio] = useState('9:16');
   const [strength, setStrength] = useState('balanced');
   const [model, setModel] = useState('nano-banana');
+  const [imageResolution, setImageResolution] = useState('2K');
   const [videoMode, setVideoMode] = useState<VideoMode>('multi_reference');
   const [resolution, setResolution] = useState('720p');
   const [duration, setDuration] = useState('5');
+  const [fastMode, setFastMode] = useState(false);
 
   const selectedCharacter = data.characters.find((character) => character.id === characterId) ?? null;
   const selectedDecor = data.decors.find((decor) => decor.id === decorId) ?? null;
@@ -76,6 +79,14 @@ export function CreationClient({ data }: { data: CreationData }) {
     if (selectedDecor) chips.push(`#${selectedDecor.handle}`);
     return `${chips.join(' ')} ${prompt}`.trim();
   }, [selectedCharacter, selectedDecor, prompt]);
+  const costEstimate = useMemo(() => estimateGenerationCost({
+    mode,
+    videoMode,
+    duration,
+    resolution,
+    imageResolution,
+    fastMode,
+  }), [duration, fastMode, imageResolution, mode, resolution, videoMode]);
 
   return (
     <div className="-m-6 flex min-h-[calc(100vh-4rem)] bg-[#070807] text-white">
@@ -100,6 +111,7 @@ export function CreationClient({ data }: { data: CreationData }) {
           <input type="hidden" name="aspectRatio" value={aspectRatio} />
           <input type="hidden" name="strength" value={strength} />
           <input type="hidden" name="model" value={model} />
+          <input type="hidden" name="imageResolution" value={imageResolution} />
           <input type="hidden" name="videoMode" value={videoMode} />
           <input type="hidden" name="resolution" value={resolution} />
           <input type="hidden" name="duration" value={duration} />
@@ -208,7 +220,7 @@ export function CreationClient({ data }: { data: CreationData }) {
 
           <CompactSection
             title="Output"
-            summary={mode === 'video' ? `${duration}s · ${resolution} · ${aspectRatio}` : `${outputCount} output · ${aspectRatio} · ${strength}`}
+            summary={mode === 'video' ? `${duration}s · ${resolution} · ${aspectRatio}` : `${outputCount} output · ${imageResolution} · ${aspectRatio}`}
           >
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -226,7 +238,7 @@ export function CreationClient({ data }: { data: CreationData }) {
                 </Select>
               </div>
               <div>
-                <Label className="text-white/80">{mode === 'video' ? 'Resolution' : 'Coherence'}</Label>
+                <Label className="text-white/80">{mode === 'video' ? 'Resolution' : 'Image quality'}</Label>
               {mode === 'video' ? (
                 <Select value={resolution} onValueChange={(value) => setResolution(value ?? '720p')}>
                   <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
@@ -239,14 +251,14 @@ export function CreationClient({ data }: { data: CreationData }) {
                   </SelectContent>
                 </Select>
               ) : (
-                <Select value={strength} onValueChange={(value) => setStrength(value ?? 'balanced')}>
+                <Select value={imageResolution} onValueChange={(value) => setImageResolution(value ?? '2K')}>
                   <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="strict">Strict refs</SelectItem>
-                    <SelectItem value="balanced">Balanced</SelectItem>
-                    <SelectItem value="creative">Creative</SelectItem>
+                    <SelectItem value="1K">1K</SelectItem>
+                    <SelectItem value="2K">2K</SelectItem>
+                    <SelectItem value="4K">4K</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -274,7 +286,7 @@ export function CreationClient({ data }: { data: CreationData }) {
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/55">
                   <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
-                    <input type="checkbox" name="fastMode" />
+                    <input type="checkbox" name="fastMode" checked={fastMode} onChange={(event) => setFastMode(event.target.checked)} />
                     Fast mode
                   </label>
                   <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
@@ -311,10 +323,28 @@ export function CreationClient({ data }: { data: CreationData }) {
                 </SelectContent>
               </Select>
               <p className="mt-2 text-xs leading-5 text-white/35">
-                Image providers need their exact Enhancor docs before all models can run through Enhancor.
+                Nano Banana returns the exact credit cost after the webhook callback.
               </p>
             </CompactSection>
           )}
+
+          <PanelBlock>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-white/35">Credit estimate</p>
+                <p className="mt-1 text-lg font-bold text-white">{costEstimate.label}</p>
+                <p className="mt-1 text-xs leading-5 text-white/40">{costEstimate.detail}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 px-3 py-2 text-right">
+                <p className="text-xs text-white/35">Balance</p>
+                <p className="mt-1 text-sm font-bold text-white">
+                  {data.creditBalance.availableCredits !== null
+                    ? data.creditBalance.availableCredits.toLocaleString('fr-FR')
+                    : 'Unavailable'}
+                </p>
+              </div>
+            </div>
+          </PanelBlock>
 
           <div className="sticky bottom-0 -mx-4 border-t border-white/10 bg-[#101110]/95 p-4 backdrop-blur">
             <div className="mb-3 flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-2">
@@ -636,6 +666,8 @@ function GenerationGrid({ jobs }: { jobs: CreationData['jobs'] }) {
       {creationJobs.map((job) => {
         const config = job.config as any;
         const signedOutputs = (job as any).signedOutputs as Array<{ signedUrl: string | null; sourceUrl?: string }> | undefined;
+        const actualCredits = creditsFromConfig(config);
+        const estimate = config?.estimatedCost as { label?: string; detail?: string; credits?: number | null } | undefined;
         return (
           <div key={job.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035]">
             <div className="flex aspect-[4/5] items-center justify-center overflow-hidden bg-black/35">
@@ -677,6 +709,17 @@ function GenerationGrid({ jobs }: { jobs: CreationData['jobs'] }) {
                 <span>{config?.outputCount} outputs</span>
                 <span>{config?.referenceCounts?.character ?? 0} char refs</span>
                 <span>{config?.referenceCounts?.decor ?? 0} decor refs</span>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-2 text-xs text-white/55">
+                <div className="flex items-center justify-between gap-2">
+                  <span>Credits</span>
+                  <span className="font-semibold text-white">
+                    {actualCredits !== null
+                      ? `${actualCredits.toLocaleString('fr-FR')} actual`
+                      : estimate?.label ?? 'Pending callback'}
+                  </span>
+                </div>
+                {estimate?.detail && <p className="mt-1 text-white/35">{estimate.detail}</p>}
               </div>
               {signedOutputs?.[0]?.signedUrl && (
                 <a

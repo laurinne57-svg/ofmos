@@ -95,6 +95,7 @@ export async function POST(request: Request) {
         config: {
           ...currentConfig,
           webhook: payload,
+          actualCost: Number(payload?.cost) || null,
         },
       })
       .where(eq(aiGenerationJobs.id, job.id));
@@ -127,6 +128,7 @@ export async function POST(request: Request) {
         config: {
           ...currentConfig,
           webhook: payload,
+          actualCost: Number(payload?.cost) || null,
           outputs,
         },
       })
