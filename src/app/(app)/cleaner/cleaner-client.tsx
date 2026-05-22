@@ -255,11 +255,13 @@ export function CleanerClient() {
 
   const stats = useMemo(() => {
     const cleanable = items.filter((item) => item.kind !== 'unsupported').length;
+    const images = items.filter((item) => item.kind === 'image').length;
+    const videos = items.filter((item) => item.kind === 'video').length;
     const done = items.filter((item) => item.status === 'done').length;
     const failed = items.filter((item) => item.status === 'failed').length;
     const before = items.reduce((sum, item) => sum + item.beforeBytes, 0);
     const after = items.reduce((sum, item) => sum + (item.afterBytes ?? 0), 0);
-    return { cleanable, done, failed, before, after };
+    return { cleanable, images, videos, done, failed, before, after };
   }, [items]);
 
   function addFiles(files: FileList | null) {
@@ -379,8 +381,8 @@ export function CleanerClient() {
                 }}
               >
                 <UploadCloud01 className="mb-3 h-9 w-9 text-muted-foreground" />
-                <p className="font-semibold">Drop videos/images here</p>
-                <p className="mt-1 text-sm text-muted-foreground">MP4, MOV, WEBM, JPG, PNG, WEBP. 50+ files supported.</p>
+                <p className="font-semibold">Drop videos here</p>
+                <p className="mt-1 text-sm text-muted-foreground">MP4, MOV, WEBM. Images are supported too, but video cleaning is the default workflow.</p>
                 <input
                   ref={inputRef}
                   type="file"
@@ -391,43 +393,7 @@ export function CleanerClient() {
                 />
               </div>
 
-              <div className="rounded-xl border p-3">
-                <p className="mb-3 text-sm font-semibold">Image output</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    ['image/jpeg', 'JPG'],
-                    ['image/png', 'PNG'],
-                    ['image/webp', 'WEBP'],
-                  ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setImageType(value as typeof imageType)}
-                      className={cn(
-                        'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                        imageType === value ? 'bg-primary text-primary-foreground' : 'hover:bg-muted',
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {imageType !== 'image/png' && (
-                  <label className="mt-3 block text-sm">
-                    Quality: {Math.round(quality * 100)}%
-                    <input
-                      type="range"
-                      min={0.7}
-                      max={1}
-                      step={0.01}
-                      value={quality}
-                      onChange={(event) => setQuality(Number(event.target.value))}
-                      className="mt-2 w-full"
-                    />
-                  </label>
-                )}
-              </div>
-
+              {(stats.videos > 0 || stats.cleanable === 0) && (
               <div className="rounded-xl border p-3">
                 <p className="mb-2 text-sm font-semibold">Video mode</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -452,6 +418,46 @@ export function CleanerClient() {
                   Fast strip nettoie sans re-encoder. Repair tente un re-encode si le fichier est cassé, mais c'est plus lent.
                 </p>
               </div>
+              )}
+
+              {stats.images > 0 && (
+                <details className="rounded-xl border p-3">
+                  <summary className="cursor-pointer text-sm font-semibold">Image output settings</summary>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {[
+                      ['image/jpeg', 'JPG'],
+                      ['image/png', 'PNG'],
+                      ['image/webp', 'WEBP'],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setImageType(value as typeof imageType)}
+                        className={cn(
+                          'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                          imageType === value ? 'bg-primary text-primary-foreground' : 'hover:bg-muted',
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {imageType !== 'image/png' && (
+                    <label className="mt-3 block text-sm">
+                      Quality: {Math.round(quality * 100)}%
+                      <input
+                        type="range"
+                        min={0.7}
+                        max={1}
+                        step={0.01}
+                        value={quality}
+                        onChange={(event) => setQuality(Number(event.target.value))}
+                        className="mt-2 w-full"
+                      />
+                    </label>
+                  )}
+                </details>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <Button onClick={runCleaner} disabled={running || stats.cleanable === 0} className="btn-3d">
@@ -487,6 +493,8 @@ export function CleanerClient() {
             <div className="flex items-center justify-between gap-3">
               <CardTitle>Queue</CardTitle>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>{stats.videos} videos</span>
+                {stats.images > 0 && <span>{stats.images} images</span>}
                 <span>{formatBytes(stats.before)} in</span>
                 {stats.after > 0 && <span>{formatBytes(stats.after)} out</span>}
               </div>
