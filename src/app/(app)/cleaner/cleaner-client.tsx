@@ -34,8 +34,12 @@ type CleanItem = {
   outputName?: string;
   beforeBytes: number;
   afterBytes?: number;
+  progress?: number;
+  stage?: string;
   error?: string;
 };
+
+type VideoCleanMode = 'fast' | 'repair';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
@@ -107,20 +111,34 @@ function videoOutputName(file: File) {
   return { name: cleanName(file.name, 'mp4'), ext: 'mp4' };
 }
 
-async function cleanVideo(ffmpeg: FFmpeg, file: File) {
+async function cleanVideo(
+  ffmpeg: FFmpeg,
+  file: File,
+  mode: VideoCleanMode,
+  onProgress: (patch: Partial<CleanItem>) => void,
+) {
+  onProgress({ stage: 'Loading FFmpeg engine', progress: 3 });
   await loadFfmpeg(ffmpeg);
 
   const logs: string[] = [];
-  ffmpeg.on('log', ({ message }) => {
+  const logHandler = ({ message }: { message: string }) => {
     if (message) logs.push(message);
     if (logs.length > 12) logs.shift();
-  });
+  };
+  const progressHandler = ({ progress }: { progress: number }) => {
+    if (Number.isFinite(progress)) {
+      onProgress({ progress: Math.min(92, Math.max(10, Math.round(progress * 90))) });
+    }
+  };
+  ffmpeg.on('log', logHandler);
+  ffmpeg.on('progress', progressHandler);
 
   const inputExt = inputExtension(file);
   const inputName = `input-${crypto.randomUUID()}.${inputExt}`;
   const { name: outputName, ext } = videoOutputName(file);
   const outputNameFs = `output-${crypto.randomUUID()}.${ext}`;
 
+  onProgress({ stage: 'Copying file into memory', progress: 6 });
   await ffmpeg.writeFile(inputName, await fetchFile(file));
 
   const args = [
@@ -146,11 +164,28 @@ async function cleanVideo(ffmpeg: FFmpeg, file: File) {
 
   args.push('-y', outputNameFs);
 
+  const streamCopyTimeout = Math.min(90_000, Math.max(20_000, file.size / 1024 / 1024 * 10_000));
+  const repairTimeout = Math.min(180_000, Math.max(45_000, file.size / 1024 / 1024 * 25_000));
+
   try {
-    await ffmpeg.exec(args);
+    onProgress({ stage: 'Fast metadata strip', progress: 10 });
+    const code = await ffmpeg.exec(args, streamCopyTimeout);
+    if (code !== 0) {
+      throw new Error(`FFmpeg exited with code ${code}`);
+    }
   } catch (error) {
+    if (mode === 'fast') {
+      throw new Error([
+        `Fast metadata strip failed or timed out after ${Math.round(streamCopyTimeout / 1000)}s.`,
+        `Try Repair mode for this file.`,
+        getErrorMessage(error),
+        logs.length ? `FFmpeg: ${logs.slice(-3).join(' | ')}` : '',
+      ].filter(Boolean).join(' '));
+    }
+
     try {
-      await ffmpeg.exec([
+      onProgress({ stage: 'Repair re-encode', progress: 15 });
+      const repairCode = await ffmpeg.exec([
         '-i',
         inputName,
         '-map',
@@ -179,7 +214,10 @@ async function cleanVideo(ffmpeg: FFmpeg, file: File) {
         '+faststart',
         '-y',
         outputNameFs,
-      ]);
+      ], repairTimeout);
+      if (repairCode !== 0) {
+        throw new Error(`FFmpeg exited with code ${repairCode}`);
+      }
     } catch (fallbackError) {
       throw new Error([
         `Stream copy failed: ${getErrorMessage(error)}`,
@@ -187,8 +225,12 @@ async function cleanVideo(ffmpeg: FFmpeg, file: File) {
         logs.length ? `FFmpeg: ${logs.slice(-4).join(' | ')}` : '',
       ].filter(Boolean).join(' / '));
     }
+  } finally {
+    ffmpeg.off('log', logHandler);
+    ffmpeg.off('progress', progressHandler);
   }
 
+  onProgress({ stage: 'Preparing output', progress: 94 });
   const data = await ffmpeg.readFile(outputNameFs);
   await ffmpeg.deleteFile(inputName).catch(() => undefined);
   await ffmpeg.deleteFile(outputNameFs).catch(() => undefined);
@@ -208,6 +250,7 @@ export function CleanerClient() {
   const [running, setRunning] = useState(false);
   const [imageType, setImageType] = useState<'image/jpeg' | 'image/png' | 'image/webp'>('image/jpeg');
   const [quality, setQuality] = useState(0.95);
+  const [videoMode, setVideoMode] = useState<VideoCleanMode>('fast');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const stats = useMemo(() => {
@@ -243,28 +286,37 @@ export function CleanerClient() {
     const queue = items.filter((item) => item.kind !== 'unsupported' && item.status !== 'done');
 
     for (const item of queue) {
-      patchItem(item.id, { status: 'processing', error: undefined });
+      patchItem(item.id, { status: 'processing', error: undefined, progress: 0, stage: 'Starting' });
       try {
         if (item.kind === 'image') {
+          patchItem(item.id, { stage: 'Re-encoding image', progress: 20 });
           const result = await cleanImage(item.file, imageType, quality);
           patchItem(item.id, {
             status: 'done',
             output: result.blob,
             outputName: cleanName(item.file.name, result.ext),
             afterBytes: result.blob.size,
+            progress: 100,
+            stage: 'Cleaned',
           });
         } else if (item.kind === 'video') {
-          const result = await cleanVideo(ffmpegRef.current, item.file);
+          const result = await cleanVideo(ffmpegRef.current, item.file, videoMode, (patch) => patchItem(item.id, patch));
           patchItem(item.id, {
             status: 'done',
             output: result.blob,
             outputName: result.outputName,
             afterBytes: result.blob.size,
+            progress: 100,
+            stage: 'Cleaned',
           });
         }
       } catch (error) {
+        ffmpegRef.current.terminate();
+        ffmpegRef.current = new FFmpeg();
         patchItem(item.id, {
           status: 'failed',
+          progress: 0,
+          stage: 'Failed',
           error: error instanceof Error ? error.message : 'Cleaning failed',
         });
       }
@@ -376,6 +428,31 @@ export function CleanerClient() {
                 )}
               </div>
 
+              <div className="rounded-xl border p-3">
+                <p className="mb-2 text-sm font-semibold">Video mode</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ['fast', 'Fast strip'],
+                    ['repair', 'Repair'],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setVideoMode(value as VideoCleanMode)}
+                      className={cn(
+                        'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                        videoMode === value ? 'bg-primary text-primary-foreground' : 'hover:bg-muted',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Fast strip nettoie sans re-encoder. Repair tente un re-encode si le fichier est cassé, mais c'est plus lent.
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <Button onClick={runCleaner} disabled={running || stats.cleanable === 0} className="btn-3d">
                   <ShieldTick className="mr-2 h-4 w-4" />
@@ -400,7 +477,7 @@ export function CleanerClient() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p>Images are decoded then re-encoded through Canvas, which drops EXIF/GPS/camera metadata.</p>
-              <p>Videos are remuxed with FFmpeg using metadata/chapter stripping. If stream copy fails, the file is re-encoded.</p>
+              <p>Videos use fast remux metadata stripping by default. Repair mode is optional for broken files.</p>
             </CardContent>
           </Card>
         </div>
@@ -441,7 +518,16 @@ export function CleanerClient() {
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {formatBytes(item.beforeBytes)}
                           {item.afterBytes ? ` -> ${formatBytes(item.afterBytes)}` : ''}
+                          {item.stage ? ` · ${item.stage}` : ''}
                         </p>
+                        {item.status === 'processing' && (
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all duration-300"
+                              style={{ width: `${Math.max(5, item.progress ?? 5)}%` }}
+                            />
+                          </div>
+                        )}
                         {item.error && (
                           <p className="mt-1 line-clamp-2 text-xs text-destructive" title={item.error}>
                             {item.error}
