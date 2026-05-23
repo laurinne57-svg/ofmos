@@ -34,10 +34,11 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { creditsFromConfig, estimateGenerationCost } from '@/lib/ai/credits';
 import { cn } from '@/lib/utils';
-import { createCreationJob } from './actions';
+import { createCreationCharacter, createCreationJob } from './actions';
 
 type CreationData = Awaited<ReturnType<typeof import('@/lib/db/queries/creation').getCreationData>>;
 type Mode = 'image' | 'video';
+type CreationTheme = 'dark' | 'light';
 type VideoMode = 'ugc' | 'multi_reference' | 'multi_frame' | 'lipsyncing' | 'first_n_last_frames' | 'text-to-video';
 
 const videoModes: Array<{
@@ -55,6 +56,7 @@ const videoModes: Array<{
 
 export function CreationClient({ data }: { data: CreationData }) {
   const [mode, setMode] = useState<Mode>('image');
+  const [theme, setTheme] = useState<CreationTheme>('dark');
   const [prompt, setPrompt] = useState('');
   const [characterId, setCharacterId] = useState(data.characters[0]?.id ?? '');
   const [decorId, setDecorId] = useState(data.decors[0]?.id ?? '');
@@ -89,18 +91,25 @@ export function CreationClient({ data }: { data: CreationData }) {
   }), [duration, fastMode, imageResolution, mode, resolution, videoMode]);
 
   return (
-    <div className="-m-6 flex min-h-[calc(100vh-4rem)] bg-[#070807] text-white">
+    <div className={cn("-m-6 flex min-h-[calc(100vh-4rem)] bg-[#070807] text-white", theme === 'light' && 'creation-light')}>
       <CreationRail mode={mode} onModeChange={setMode} />
 
-      <aside className="w-[430px] shrink-0 border-r border-white/10 bg-[#101110] p-4">
+      <aside className="creation-sidebar w-[430px] shrink-0 border-r border-white/10 bg-[#101110] p-4">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-white/40">Create</p>
             <h1 className="mt-1 text-2xl font-bold">{mode === 'image' ? 'Image Generator' : 'Video Generator'}</h1>
           </div>
-          <Button variant="outline" className="border-white/10 bg-white/5 text-white hover:bg-white/10">
-            Tutorials
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-white/10 bg-white/5 text-white hover:bg-white/10"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? 'Light' : 'Dark'}
+            </Button>
+          </div>
         </div>
 
         <form action={createCreationJob} className="space-y-3">
@@ -164,9 +173,12 @@ export function CreationClient({ data }: { data: CreationData }) {
           >
             <div className="grid gap-3">
               <div>
-                <Label className="text-white/80">Character</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-white/80">Avatar</Label>
+                  <CreateAvatarPanel />
+                </div>
                 <Select value={characterId} onValueChange={(value) => setCharacterId(value ?? '')}>
-                  <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
+                  <SelectTrigger className="creation-field mt-2 w-full border-white/10 bg-black/30 text-white">
                     <SelectValue placeholder="Select #character" />
                   </SelectTrigger>
                   <SelectContent>
@@ -183,7 +195,7 @@ export function CreationClient({ data }: { data: CreationData }) {
               <div>
                 <Label className="text-white/80">Décor</Label>
                 <Select value={decorId} onValueChange={(value) => setDecorId(value ?? '')}>
-                  <SelectTrigger className="mt-2 w-full border-white/10 bg-black/30 text-white">
+                  <SelectTrigger className="creation-field mt-2 w-full border-white/10 bg-black/30 text-white">
                     <SelectValue placeholder="Select #decor" />
                   </SelectTrigger>
                   <SelectContent>
@@ -364,12 +376,12 @@ export function CreationClient({ data }: { data: CreationData }) {
                 +
               </button>
             </div>
-            <GenerateButton />
+            <GenerateButton costLabel={costEstimate.label} />
           </div>
         </form>
       </aside>
 
-      <main className="min-w-0 flex-1 p-5">
+      <main className="creation-main min-w-0 flex-1 p-5">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button className="rounded-2xl bg-white px-5 text-black hover:bg-white/90">
@@ -380,6 +392,14 @@ export function CreationClient({ data }: { data: CreationData }) {
             <Button variant="ghost" className="text-white/55 hover:bg-white/10 hover:text-white">Folders</Button>
           </div>
           <div className="flex items-center gap-2">
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-right">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/35">Credits left</p>
+              <p className="text-sm font-bold text-white">
+                {data.creditBalance.availableCredits !== null
+                  ? data.creditBalance.availableCredits.toLocaleString('fr-FR')
+                  : 'Need endpoint'}
+              </p>
+            </div>
             <Button variant="outline" size="icon" className="border-white/10 bg-white/5 text-white hover:bg-white/10">
               <FilterLines className="h-4 w-4" />
             </Button>
@@ -409,7 +429,7 @@ function CreationRail({ mode, onModeChange }: { mode: Mode; onModeChange: (mode:
   ];
 
   return (
-    <nav className="flex w-[78px] shrink-0 flex-col items-center gap-4 border-r border-white/10 bg-[#0b0c0b] py-4">
+    <nav className="creation-rail flex w-[78px] shrink-0 flex-col items-center gap-4 border-r border-white/10 bg-[#0b0c0b] py-4">
       <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 font-bold">O</div>
       {items.map((item) => {
         const Icon = item.icon;
@@ -436,7 +456,7 @@ function CreationRail({ mode, onModeChange }: { mode: Mode; onModeChange: (mode:
 }
 
 function PanelBlock({ children }: { children: ReactNode }) {
-  return <div className="rounded-2xl border border-white/8 bg-white/[0.035] p-4">{children}</div>;
+  return <div className="creation-panel rounded-2xl border border-white/8 bg-white/[0.035] p-4">{children}</div>;
 }
 
 function CompactSection({
@@ -453,7 +473,7 @@ function CompactSection({
   return (
     <details
       open={defaultOpen}
-      className="group rounded-2xl border border-white/8 bg-white/[0.035] [&_summary::-webkit-details-marker]:hidden"
+      className="creation-panel group rounded-2xl border border-white/8 bg-white/[0.035] [&_summary::-webkit-details-marker]:hidden"
     >
       <summary className="flex cursor-pointer select-none items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
@@ -740,7 +760,62 @@ function GenerationGrid({ jobs }: { jobs: CreationData['jobs'] }) {
   );
 }
 
-function GenerateButton() {
+function CreateAvatarPanel() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="h-8 rounded-lg border border-white/10 px-3 text-sm font-bold text-white/70 hover:bg-white/10"
+      >
+        +
+      </button>
+      {open && (
+        <div className="absolute right-0 top-10 z-30 w-[360px] rounded-2xl border border-white/10 bg-[#111211] p-4 shadow-2xl creation-panel">
+          <div className="mb-3">
+            <p className="text-sm font-bold text-white">Create avatar</p>
+            <p className="mt-1 text-xs leading-5 text-white/40">Upload 1-10 reference images. Use the handle as #avatar in prompts.</p>
+          </div>
+          <form action={createCreationCharacter} className="space-y-3" onSubmit={() => setOpen(false)}>
+            <input
+              name="name"
+              required
+              placeholder="Avatar name, ex: Anna"
+              className="creation-field h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white placeholder:text-white/30"
+            />
+            <input
+              name="handle"
+              required
+              placeholder="Handle, ex: anna"
+              className="creation-field h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white placeholder:text-white/30"
+            />
+            <Textarea
+              name="identityPrompt"
+              rows={3}
+              placeholder="Identity notes: face, hair, body, style..."
+              className="creation-field border-white/10 bg-black/30 text-white placeholder:text-white/30"
+            />
+            <input
+              name="referenceImages"
+              type="file"
+              accept="image/*"
+              multiple
+              required
+              className="creation-field w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+            />
+            <Button type="submit" className="h-10 w-full rounded-xl bg-[#a82b8f] font-bold text-white hover:bg-[#bd35a2]">
+              Create avatar
+            </Button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GenerateButton({ costLabel }: { costLabel: string }) {
   const { pending } = useFormStatus();
 
   return (
@@ -750,7 +825,7 @@ function GenerateButton() {
       className="h-12 w-full rounded-2xl bg-[#a82b8f] text-base font-bold text-white shadow-[0_10px_30px_rgba(168,43,143,0.35)] hover:bg-[#bd35a2] disabled:opacity-60"
     >
       <Stars02 className="mr-2 h-4 w-4" />
-      {pending ? 'Generating...' : 'Generate'}
+      {pending ? 'Generating...' : `Generate · ${costLabel}`}
     </Button>
   );
 }

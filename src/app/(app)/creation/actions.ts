@@ -377,3 +377,76 @@ export async function createCreationJob(formData: FormData): Promise<void> {
 
   revalidatePath('/creation');
 }
+
+function cleanHandle(value: FormDataEntryValue | null) {
+  return String(value ?? '')
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+export async function createCreationCharacter(formData: FormData): Promise<void> {
+  const name = String(formData.get('name') ?? '').trim();
+  const handle = cleanHandle(formData.get('handle') || name);
+  const description = String(formData.get('description') ?? '').trim();
+  const identityPrompt = String(formData.get('identityPrompt') ?? '').trim();
+  const negativePrompt = String(formData.get('negativePrompt') ?? '').trim();
+  const files = formData
+    .getAll('referenceImages')
+    .filter((value): value is File => value instanceof File && value.size > 0)
+    .slice(0, 10);
+
+  if (!name || !handle) throw new Error('Character name and handle are required');
+  if (files.length < 1) throw new Error('Upload at least 1 avatar reference image');
+  if (files.some((file) => !file.type.startsWith('image/'))) {
+    throw new Error('Avatar references must be images');
+  }
+
+  const [character] = await db
+    .insert(aiCharacters)
+    .values({
+      name,
+      handle,
+      description: description || null,
+      identityPrompt: identityPrompt || null,
+      negativePrompt: negativePrompt || null,
+    })
+    .returning({ id: aiCharacters.id });
+
+  const supabase = await createClient();
+  const uploadedRefs = [];
+
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+    const ext = file.name.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase() || 'jpg';
+    const path = `characters/${character.id}/${Date.now()}-${index + 1}.${ext}`;
+    const bytes = await file.arrayBuffer();
+
+    const { error } = await supabase.storage
+      .from('ai-reference')
+      .upload(path, bytes, { contentType: file.type || 'image/jpeg', upsert: false });
+
+    if (error) throw error;
+
+    uploadedRefs.push({
+      assetType: 'character' as const,
+      characterId: character.id,
+      environmentId: null,
+      bucket: 'ai-reference',
+      storagePath: path,
+      originalName: file.name,
+      mimeType: file.type || 'image/jpeg',
+      fileSizeBytes: file.size,
+    });
+  }
+
+  if (uploadedRefs.length) {
+    await db.insert(aiReferenceImages).values(uploadedRefs);
+  }
+
+  revalidatePath('/creation');
+  revalidatePath('/ai-studio');
+}
