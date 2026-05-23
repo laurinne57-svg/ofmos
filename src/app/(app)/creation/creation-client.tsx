@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
 import { useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
+import { useTheme } from 'next-themes';
 
 import {
   ChevronDown,
@@ -38,7 +40,6 @@ import { createCreationCharacter, createCreationJob } from './actions';
 
 type CreationData = Awaited<ReturnType<typeof import('@/lib/db/queries/creation').getCreationData>>;
 type Mode = 'image' | 'video';
-type CreationTheme = 'dark' | 'light';
 type VideoMode = 'ugc' | 'multi_reference' | 'multi_frame' | 'lipsyncing' | 'first_n_last_frames' | 'text-to-video';
 
 const videoModes: Array<{
@@ -55,8 +56,8 @@ const videoModes: Array<{
 ];
 
 export function CreationClient({ data }: { data: CreationData }) {
+  const { resolvedTheme, setTheme } = useTheme();
   const [mode, setMode] = useState<Mode>('image');
-  const [theme, setTheme] = useState<CreationTheme>('dark');
   const [prompt, setPrompt] = useState('');
   const [characterId, setCharacterId] = useState(data.characters[0]?.id ?? '');
   const [decorId, setDecorId] = useState(data.decors[0]?.id ?? '');
@@ -91,7 +92,7 @@ export function CreationClient({ data }: { data: CreationData }) {
   }), [duration, fastMode, imageResolution, mode, resolution, videoMode]);
 
   return (
-    <div className={cn("-m-6 flex min-h-[calc(100vh-4rem)] bg-[#070807] text-white", theme === 'light' && 'creation-light')}>
+    <div className={cn("-m-6 flex min-h-[calc(100vh-4rem)] bg-[#070807] text-white", resolvedTheme !== 'dark' && 'creation-light')}>
       <CreationRail mode={mode} onModeChange={setMode} />
 
       <aside className="creation-sidebar w-[430px] shrink-0 border-r border-white/10 bg-[#101110] p-4">
@@ -105,9 +106,9 @@ export function CreationClient({ data }: { data: CreationData }) {
               type="button"
               variant="outline"
               className="border-white/10 bg-white/5 text-white hover:bg-white/10"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             >
-              {theme === 'dark' ? 'Light' : 'Dark'}
+              {resolvedTheme === 'dark' ? 'Light' : 'Dark'}
             </Button>
           </div>
         </div>
@@ -761,7 +762,45 @@ function GenerationGrid({ jobs }: { jobs: CreationData['jobs'] }) {
 }
 
 function CreateAvatarPanel() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState('');
+  const [isPending, startTransition] = useTransition();
+  const nameRef = useRef<HTMLInputElement>(null);
+  const handleRef = useRef<HTMLInputElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const filesRef = useRef<HTMLInputElement>(null);
+
+  function submitAvatar() {
+    setError('');
+    const files = filesRef.current?.files;
+
+    if (!files || files.length < 1) {
+      setError('Upload at least 1 reference image.');
+      return;
+    }
+
+    if (files.length > 10) {
+      setError('Maximum 10 reference images.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set('name', nameRef.current?.value ?? '');
+    formData.set('handle', handleRef.current?.value ?? '');
+    formData.set('identityPrompt', promptRef.current?.value ?? '');
+    Array.from(files).forEach((file) => formData.append('referenceImages', file));
+
+    startTransition(async () => {
+      try {
+        await createCreationCharacter(formData);
+        setOpen(false);
+        router.refresh();
+      } catch (exception) {
+        setError(exception instanceof Error ? exception.message : 'Avatar creation failed.');
+      }
+    });
+  }
 
   return (
     <div className="relative">
@@ -778,26 +817,30 @@ function CreateAvatarPanel() {
             <p className="text-sm font-bold text-white">Create avatar</p>
             <p className="mt-1 text-xs leading-5 text-white/40">Upload 1-10 reference images. Use the handle as #avatar in prompts.</p>
           </div>
-          <form action={createCreationCharacter} className="space-y-3" onSubmit={() => setOpen(false)}>
+          <div className="space-y-3">
             <input
+              ref={nameRef}
               name="name"
               required
               placeholder="Avatar name, ex: Anna"
               className="creation-field h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white placeholder:text-white/30"
             />
             <input
+              ref={handleRef}
               name="handle"
               required
               placeholder="Handle, ex: anna"
               className="creation-field h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white placeholder:text-white/30"
             />
             <Textarea
+              ref={promptRef}
               name="identityPrompt"
               rows={3}
-              placeholder="Identity notes: face, hair, body, style..."
+              placeholder="Optional identity notes: face, hair, body, style..."
               className="creation-field border-white/10 bg-black/30 text-white placeholder:text-white/30"
             />
             <input
+              ref={filesRef}
               name="referenceImages"
               type="file"
               accept="image/*"
@@ -805,10 +848,20 @@ function CreateAvatarPanel() {
               required
               className="creation-field w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
             />
-            <Button type="submit" className="h-10 w-full rounded-xl bg-[#a82b8f] font-bold text-white hover:bg-[#bd35a2]">
-              Create avatar
+            {error && (
+              <p className="rounded-lg border border-red-400/25 bg-red-500/10 p-2 text-xs leading-5 text-red-200">
+                {error}
+              </p>
+            )}
+            <Button
+              type="button"
+              disabled={isPending}
+              onClick={submitAvatar}
+              className="h-10 w-full rounded-xl bg-[#a82b8f] font-bold text-white hover:bg-[#bd35a2] disabled:opacity-60"
+            >
+              {isPending ? 'Creating...' : 'Create avatar'}
             </Button>
-          </form>
+          </div>
         </div>
       )}
     </div>
