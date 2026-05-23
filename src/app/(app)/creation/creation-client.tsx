@@ -35,8 +35,9 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { creditsFromConfig, estimateGenerationCost } from '@/lib/ai/credits';
+import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import { createCreationCharacter, createCreationJob } from './actions';
+import { createCreationCharacterFromUploads, createCreationJob } from './actions';
 
 type CreationData = Awaited<ReturnType<typeof import('@/lib/db/queries/creation').getCreationData>>;
 type Mode = 'image' | 'video';
@@ -765,6 +766,7 @@ function CreateAvatarPanel() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState('');
   const [isPending, startTransition] = useTransition();
   const nameRef = useRef<HTMLInputElement>(null);
   const handleRef = useRef<HTMLInputElement>(null);
@@ -773,7 +775,15 @@ function CreateAvatarPanel() {
 
   function submitAvatar() {
     setError('');
+    setProgress('');
     const files = filesRef.current?.files;
+    const name = nameRef.current?.value.trim() ?? '';
+    const handle = handleRef.current?.value.trim() ?? '';
+
+    if (!name || !handle) {
+      setError('Avatar name and handle are required.');
+      return;
+    }
 
     if (!files || files.length < 1) {
       setError('Upload at least 1 reference image.');
@@ -785,15 +795,45 @@ function CreateAvatarPanel() {
       return;
     }
 
-    const formData = new FormData();
-    formData.set('name', nameRef.current?.value ?? '');
-    formData.set('handle', handleRef.current?.value ?? '');
-    formData.set('identityPrompt', promptRef.current?.value ?? '');
-    Array.from(files).forEach((file) => formData.append('referenceImages', file));
+    const fileList = Array.from(files);
+    if (fileList.some((file) => !file.type.startsWith('image/'))) {
+      setError('Only image files are accepted.');
+      return;
+    }
 
     startTransition(async () => {
       try {
-        await createCreationCharacter(formData);
+        const supabase = createClient();
+        const uploadPrefix = `characters/tmp-${crypto.randomUUID()}`;
+        const references = [];
+
+        for (let index = 0; index < fileList.length; index++) {
+          const file = fileList[index];
+          setProgress(`Uploading ${index + 1}/${fileList.length}`);
+          const ext = file.name.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase() || 'jpg';
+          const storagePath = `${uploadPrefix}/${Date.now()}-${index + 1}.${ext}`;
+          const { error: uploadError } = await supabase.storage
+            .from('ai-reference')
+            .upload(storagePath, file, { contentType: file.type || 'image/jpeg', upsert: false });
+
+          if (uploadError) throw uploadError;
+
+          references.push({
+            bucket: 'ai-reference',
+            storagePath,
+            originalName: file.name,
+            mimeType: file.type || 'image/jpeg',
+            fileSizeBytes: file.size,
+          });
+        }
+
+        setProgress('Saving avatar');
+        await createCreationCharacterFromUploads({
+          name,
+          handle,
+          identityPrompt: promptRef.current?.value ?? '',
+          references,
+        });
         setOpen(false);
         router.refresh();
       } catch (exception) {
@@ -851,6 +891,11 @@ function CreateAvatarPanel() {
             {error && (
               <p className="rounded-lg border border-red-400/25 bg-red-500/10 p-2 text-xs leading-5 text-red-200">
                 {error}
+              </p>
+            )}
+            {progress && !error && (
+              <p className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs leading-5 text-white/55">
+                {progress}
               </p>
             )}
             <Button

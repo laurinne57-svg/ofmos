@@ -450,3 +450,49 @@ export async function createCreationCharacter(formData: FormData): Promise<void>
   revalidatePath('/creation');
   revalidatePath('/ai-studio');
 }
+
+export async function createCreationCharacterFromUploads(input: {
+  name: string;
+  handle: string;
+  identityPrompt?: string;
+  references: Array<{
+    bucket: string;
+    storagePath: string;
+    originalName: string;
+    mimeType: string;
+    fileSizeBytes: number;
+  }>;
+}): Promise<void> {
+  const name = input.name.trim();
+  const handle = cleanHandle(input.handle || name);
+  const identityPrompt = input.identityPrompt?.trim() ?? '';
+  const references = input.references.slice(0, 10);
+
+  if (!name || !handle) throw new Error('Character name and handle are required');
+  if (references.length < 1) throw new Error('Upload at least 1 avatar reference image');
+
+  const [character] = await db
+    .insert(aiCharacters)
+    .values({
+      name,
+      handle,
+      identityPrompt: identityPrompt || null,
+    })
+    .returning({ id: aiCharacters.id });
+
+  await db.insert(aiReferenceImages).values(
+    references.map((reference) => ({
+      assetType: 'character' as const,
+      characterId: character.id,
+      environmentId: null,
+      bucket: reference.bucket,
+      storagePath: reference.storagePath,
+      originalName: reference.originalName,
+      mimeType: reference.mimeType,
+      fileSizeBytes: reference.fileSizeBytes,
+    })),
+  );
+
+  revalidatePath('/creation');
+  revalidatePath('/ai-studio');
+}
